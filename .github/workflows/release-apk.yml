@@ -78,8 +78,13 @@ jobs:
             if command -v apksigner >/dev/null 2>&1; then
               apksigner sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} --out "$signed" "$aligned"
               mv "$signed" "$apk"
+            elif command -v jarsigner >/dev/null 2>&1; then
+              echo "apksigner not found, falling back to jarsigner (v1 signature)"
+              # jarsigner will create META-INF entries (v1). Use the aligned file if present.
+              jarsigner -keystore release.keystore -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" -keypass "${{ secrets.ANDROID_KEY_PASSWORD }}" -signedjar "$signed" "$aligned" "${{ secrets.ANDROID_KEY_ALIAS }}"
+              mv "$signed" "$apk"
             else
-              echo "apksigner not found in PATH - skipping signing"
+              echo "apksigner and jarsigner not found in PATH - skipping signing"
             fi
           done
 
