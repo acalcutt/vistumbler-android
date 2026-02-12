@@ -48,6 +48,12 @@ public class PreferenceKeys {
     public static final String PREF_DISABLE_TOAST = "disableToast"; // bool
     public static final String PREF_BLOWED_UP = "blowedUp";
     public static final String PREF_CONFIRM_UPLOAD_USER = "confirmUploadUser";
+    // WifiDB (separate provider) preferences
+    public static final String PREF_WIFIDB_USERNAME = "wifidb_username";
+    public static final String PREF_WIFIDB_APIKEY = "wifidb_apikey";
+    public static final String PREF_WIFIDB_URL = "wifidb_url";
+    public static final String PREF_WIFIDB_AUTO_UPLOAD = "wifidb_auto_upload";
+    public static final String PREF_WIFIDB_AUTO_INTERVAL = "wifidb_auto_interval";
     public static final String PREF_EXCLUDE_DISPLAY_ADDRS = "displayExcludeAddresses";
     public static final String PREF_EXCLUDE_LOG_ADDRS = "logExcludeAddresses";
     public static final String PREF_GPS_TIMEOUT = "gpsTimeout";

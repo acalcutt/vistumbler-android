@@ -258,6 +258,13 @@
     <string name="wifi_restart_2">seconds ago. Restarting WiFi.</string>
     <string name="use_wigle_tiles">Use WiGLE OSM tiles</string>
     <string name="wigle_service">WiGLE WiFi Service</string>
+    <!-- WifiDB settings -->
+    <string name="wifidb_settings_head">WiFiDB Settings</string>
+    <string name="wifidb_username">WiFiDB Username</string>
+    <string name="wifidb_apikey">WiFiDB API Key</string>
+    <string name="wifidb_url">WiFiDB URL</string>
+    <string name="wifidb_auto_upload">Auto WiFiDB Upload Active AP</string>
+    <string name="wifidb_auto_interval">Refresh time (s)</string>
     <string name="disable_toast">Disable toast pop-ups</string>
     <string name="menu_cluster_off">Clustering Off</string>
     <string name="menu_cluster_on">Clustering On</string>

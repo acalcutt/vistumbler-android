@@ -584,6 +584,47 @@ public final class SettingsFragment extends Fragment implements DialogListener {
             };
             SettingsUtil.doSpinner(R.id.language_spinner, view, PreferenceKeys.PREF_LANGUAGE, "", languages, languageName, getContext());
         }
+
+        // WiFiDB preferences bindings
+        final EditText wdbUser = view.findViewById(R.id.edit_wifidb_username);
+        final EditText wdbApi = view.findViewById(R.id.edit_wifidb_apikey);
+        final EditText wdbUrl = view.findViewById(R.id.edit_wifidb_url);
+        final CheckBox wdbAuto = view.findViewById(R.id.checkbox_wifidb_autoupload);
+        final EditText wdbInterval = view.findViewById(R.id.edit_wifidb_auto_interval);
+
+        // init values
+        wdbUser.setText(prefs.getString(PreferenceKeys.PREF_WIFIDB_USERNAME, ""));
+        wdbApi.setText(prefs.getString(PreferenceKeys.PREF_WIFIDB_APIKEY, ""));
+        wdbUrl.setText(prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, ""));
+        wdbAuto.setChecked(prefs.getBoolean(PreferenceKeys.PREF_WIFIDB_AUTO_UPLOAD, false));
+        wdbInterval.setText(Integer.toString(prefs.getInt(PreferenceKeys.PREF_WIFIDB_AUTO_INTERVAL, 60)));
+
+        wdbUser.addTextChangedListener(new SetWatcher() {
+            @Override public void onTextChanged(String s) { credentialsUpdate(PreferenceKeys.PREF_WIFIDB_USERNAME, editor, prefs, s); }
+        });
+        wdbApi.addTextChangedListener(new SetWatcher() {
+            @Override public void onTextChanged(String s) { credentialsUpdate(PreferenceKeys.PREF_WIFIDB_APIKEY, editor, prefs, s); }
+        });
+        wdbUrl.addTextChangedListener(new SetWatcher() {
+            @Override public void onTextChanged(String s) { credentialsUpdate(PreferenceKeys.PREF_WIFIDB_URL, editor, prefs, s); }
+        });
+
+        wdbAuto.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            editor.putBoolean(PreferenceKeys.PREF_WIFIDB_AUTO_UPLOAD, isChecked);
+            editor.apply();
+        });
+
+        wdbInterval.addTextChangedListener(new SetWatcher() {
+            @Override public void onTextChanged(String s) {
+                try {
+                    int v = Integer.parseInt(s.trim());
+                    editor.putInt(PreferenceKeys.PREF_WIFIDB_AUTO_INTERVAL, v);
+                } catch (Exception ex) {
+                    editor.remove(PreferenceKeys.PREF_WIFIDB_AUTO_INTERVAL);
+                }
+                editor.apply();
+            }
+        });
         if (Build.VERSION.SDK_INT > 28) {
             View theme = view.findViewById(R.id.theme_section);
             theme.setVisibility(View.VISIBLE);

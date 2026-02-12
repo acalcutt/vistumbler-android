@@ -699,6 +699,93 @@ public class WiGLEApiManager {
     }
 
     /**
+     * Upload a file to a configured WifiDB instance (separate provider).
+     * Reads `wifidb_url`, `wifidb_username`, `wifidb_apikey` from preferences.
+     */
+    public void uploadToWifiDB(@NotNull final String filename,
+                               @NotNull final Map<String, String> params,
+                               final Handler handler,
+                               @NotNull final RequestCompletedListener<UploadReseponse,
+            JSONObject> completedListener) {
+        final SharedPreferences prefs = context.getSharedPreferences(net.wigle.wigleandroid.util.PreferenceKeys.SHARED_PREFS, 0);
+        final String url = prefs.getString(net.wigle.wigleandroid.util.PreferenceKeys.PREF_WIFIDB_URL, "");
+        if (url == null || url.isEmpty()) {
+            completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+            return;
+        }
+
+        MultipartBody.Builder builder = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", new File(filename).getName(),
+                        RequestBody.create(new File(filename), MediaType.parse("text/csv")));
+
+        // add configured username/apikey if present
+        final String wuser = prefs.getString(net.wigle.wigleandroid.util.PreferenceKeys.PREF_WIFIDB_USERNAME, "");
+        final String wapikey = prefs.getString(net.wigle.wigleandroid.util.PreferenceKeys.PREF_WIFIDB_APIKEY, "");
+        if (wuser != null && !wuser.isEmpty()) builder.addFormDataPart("username", wuser);
+        if (wapikey != null && !wapikey.isEmpty()) builder.addFormDataPart("apikey", wapikey);
+
+        // add user-supplied params
+        if (!params.isEmpty()) {
+            for ( Map.Entry<String, String> entry : params.entrySet() ) {
+                builder.addFormDataPart(entry.getKey(), entry.getValue());
+            }
+        }
+
+        MultipartBody requestBody = builder.build();
+        CountingRequestBody countingBody
+                = new CountingRequestBody(requestBody, (bytesWritten, contentLength) -> {
+            int progress = (int)((bytesWritten*1000) / contentLength );
+            Logging.info("progress: "+ progress + "("+bytesWritten +" /"+contentLength+")");
+            if ( handler != null && progress >= 0 ) {
+                handler.sendEmptyMessage( BackgroundGuiHandler.WRITING_PERCENT_START + progress );
+            }
+        });
+
+        OkHttpClient client = unauthedClient;
+        if (authedClient != null) {
+            client = authedClient;
+        }
+        Request request = new Request.Builder()
+                .url(url)
+                .post(countingBody)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    Logging.error("Failed to upload file to WifiDB: " + response.code() + " " + response.message());
+                    completedListener.onTaskFailed(response.code(), null);
+                } else {
+                    if (null != response.body()) {
+                        try (ResponseBody responseBody = response.body()) {
+                            final String responseBodyString = responseBody.string();
+                            UploadReseponse r =  new Gson().fromJson(responseBodyString,
+                                    UploadReseponse.class);
+                            completedListener.onTaskSucceeded(r);
+                        } catch (JsonSyntaxException e) {
+                            completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                        }
+                    } else {
+                        completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                if (null != e) {
+                    Logging.error("Failed to upload to WifiDB - client exception: "+ e.getClass() + " - " + e.getMessage());
+                } else {
+                    Logging.error("Failed to upload to WifiDB - client call failed. (data: "+hasDataConnection(context.getApplicationContext())+")");
+                }
+                completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+            }
+        });
+    }
+
+    /**
      * Check to see if we have a working data connection
      * @param context context to use to get the {@link android.net.ConnectivityManager} used to check for connection
      * @return true if there's an active connection, otherwise false.
