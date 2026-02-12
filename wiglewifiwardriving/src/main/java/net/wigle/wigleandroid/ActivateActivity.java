@@ -38,6 +38,7 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions;
 import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
+import org.json.JSONObject;
 
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
@@ -165,20 +166,80 @@ public class ActivateActivity extends AppCompatActivity {
                                 if (!barcodes.isEmpty()) {
                                     Logging.info("received detections");
                                     for (Barcode qr : barcodes) {
-                                        if (qr.getDisplayValue() != null && qr.getDisplayValue().matches("^.*:[a-zA-Z0-9]*:[a-zA-Z0-9]*$")) {
-                                            String[] tokens = qr.getDisplayValue().split(":");
+                                        if (qr.getDisplayValue() != null) {
+                                            String dv = qr.getDisplayValue();
+                                            // existing WiGLE activation format: username:authname:token
+                                            if (dv.matches("^.*:[a-zA-Z0-9]*:[a-zA-Z0-9]*$")) {
 
-                                            final SharedPreferences prefs = MainActivity.getMainActivity().
-                                                    getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
-                                            final SharedPreferences.Editor editor = prefs.edit();
-                                            editor.putString(PreferenceKeys.PREF_USERNAME, tokens[0]);
-                                            editor.putString(PreferenceKeys.PREF_AUTHNAME, tokens[1]);
-                                            editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
-                                            editor.apply();
-                                            TokenAccess.setApiToken(prefs, tokens[2]);
-                                            MainActivity.refreshApiManager();
-                                            image.close();
-                                            finish();
+                                                String[] tokens = dv.split(":");
+
+                                                final SharedPreferences prefs = MainActivity.getMainActivity().
+                                                        getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                                                final SharedPreferences.Editor editor = prefs.edit();
+                                                editor.putString(PreferenceKeys.PREF_USERNAME, tokens[0]);
+                                                editor.putString(PreferenceKeys.PREF_AUTHNAME, tokens[1]);
+                                                editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
+                                                editor.apply();
+                                                TokenAccess.setApiToken(prefs, tokens[2]);
+                                                MainActivity.refreshApiManager();
+                                                image.close();
+                                                finish();
+                                            }
+
+                                            // WifiDB one-time redeem URL, e.g. https://<host>/wifidb/cp/redeem_link.php?token=...
+                                            else if (dv.contains("redeem_link.php?token=")) {
+                                                final String redeemUrl = dv.trim();
+                                                // perform network call off the main thread
+                                                new Thread(() -> {
+                                                    try {
+                                                        java.net.URL url = new java.net.URL(redeemUrl);
+                                                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                                                        conn.setRequestMethod("GET");
+                                                        conn.setConnectTimeout(5000);
+                                                        conn.setReadTimeout(5000);
+                                                        int rc = conn.getResponseCode();
+                                                        if (rc == 200) {
+                                                            java.io.InputStream is = conn.getInputStream();
+                                                            java.io.BufferedReader rd = new java.io.BufferedReader(new java.io.InputStreamReader(is));
+                                                            StringBuilder sb = new StringBuilder();
+                                                            String line;
+                                                            while ((line = rd.readLine()) != null) sb.append(line);
+                                                            rd.close();
+                                                            String resp = sb.toString();
+                                                            try {
+                                                                JSONObject obj = new JSONObject(resp);
+                                                                final String apikey = obj.optString("apikey", null);
+                                                                final String username = obj.optString("username", null);
+                                                                if (apikey != null && !apikey.isEmpty()) {
+                                                                    runOnUiThread(() -> {
+                                                                        final SharedPreferences prefs = MainActivity.getMainActivity().
+                                                                                getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                                                                        final SharedPreferences.Editor editor = prefs.edit();
+                                                                        if (username != null) editor.putString(PreferenceKeys.PREF_USERNAME, username);
+                                                                        editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
+                                                                        editor.apply();
+                                                                        TokenAccess.setApiToken(prefs, apikey);
+                                                                        MainActivity.refreshApiManager();
+                                                                        image.close();
+                                                                        finish();
+                                                                    });
+                                                                }
+                                                            } catch (Exception je) {
+                                                                Logging.error("Failed to parse redeem JSON: ", je);
+                                                            }
+                                                        } else {
+                                                            Logging.warn("Redeem URL returned rc="+rc);
+                                                        }
+                                                    } catch (Exception e) {
+                                                        Logging.error("Error redeeming WifiDB token: ", e);
+                                                    }
+                                                }).start();
+                                                // let background thread finish work; return from analyzer
+                                                image.close();
+                                                return;
+                                            }
+                                        }
+                                    
                                         }
                                     }
                                 }
