@@ -158,98 +158,97 @@ public class ActivateActivity extends AppCompatActivity {
             @Override
             public void analyze(@NonNull ImageProxy image) {
                 Image mediaImage = image.getImage();
-                if (mediaImage != null) {
-                    InputImage inputImage =
-                            InputImage.fromMediaImage(mediaImage, image.getImageInfo().getRotationDegrees());
-                    barcodeScanner.process(inputImage).addOnSuccessListener(
-                            barcodes -> {
-                                if (!barcodes.isEmpty()) {
-                                    Logging.info("received detections");
-                                    for (Barcode qr : barcodes) {
-                                        if (qr.getDisplayValue() != null) {
-                                            String dv = qr.getDisplayValue();
-                                            // existing WiGLE activation format: username:authname:token
-                                            if (dv.matches("^.*:[a-zA-Z0-9]*:[a-zA-Z0-9]*$")) {
+                if (mediaImage == null) {
+                    try { image.close(); } catch (Exception ignored) {}
+                    return;
+                }
 
-                                                String[] tokens = dv.split(":");
+                InputImage inputImage = InputImage.fromMediaImage(mediaImage, image.getImageInfo().getRotationDegrees());
 
-                                                final SharedPreferences prefs = MainActivity.getMainActivity().
-                                                        getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
-                                                final SharedPreferences.Editor editor = prefs.edit();
-                                                editor.putString(PreferenceKeys.PREF_USERNAME, tokens[0]);
-                                                editor.putString(PreferenceKeys.PREF_AUTHNAME, tokens[1]);
-                                                editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
-                                                editor.apply();
-                                                TokenAccess.setApiToken(prefs, tokens[2]);
-                                                MainActivity.refreshApiManager();
-                                                image.close();
-                                                finish();
-                                            }
+                barcodeScanner.process(inputImage)
+                    .addOnSuccessListener(barcodes -> {
+                        if (barcodes == null || barcodes.isEmpty()) {
+                            return;
+                        }
+                        Logging.info("received detections");
+                        for (Barcode qr : barcodes) {
+                            if (qr == null) continue;
+                            final String dv = qr.getDisplayValue();
+                            if (dv == null) continue;
 
-                                            // WifiDB one-time redeem URL, e.g. https://<host>/wifidb/cp/redeem_link.php?token=...
-                                            else if (dv.contains("redeem_link.php?token=")) {
-                                                final String redeemUrl = dv.trim();
-                                                // perform network call off the main thread
-                                                new Thread(() -> {
-                                                    try {
-                                                        java.net.URL url = new java.net.URL(redeemUrl);
-                                                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                                                        conn.setRequestMethod("GET");
-                                                        conn.setConnectTimeout(5000);
-                                                        conn.setReadTimeout(5000);
-                                                        int rc = conn.getResponseCode();
-                                                        if (rc == 200) {
-                                                            java.io.InputStream is = conn.getInputStream();
-                                                            java.io.BufferedReader rd = new java.io.BufferedReader(new java.io.InputStreamReader(is));
-                                                            StringBuilder sb = new StringBuilder();
-                                                            String line;
-                                                            while ((line = rd.readLine()) != null) sb.append(line);
-                                                            rd.close();
-                                                            String resp = sb.toString();
-                                                            try {
-                                                                JSONObject obj = new JSONObject(resp);
-                                                                final String apikey = obj.optString("apikey", null);
-                                                                final String username = obj.optString("username", null);
-                                                                if (apikey != null && !apikey.isEmpty()) {
-                                                                    runOnUiThread(() -> {
-                                                                        final SharedPreferences prefs = MainActivity.getMainActivity().
-                                                                                getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
-                                                                        final SharedPreferences.Editor editor = prefs.edit();
-                                                                        if (username != null) editor.putString(PreferenceKeys.PREF_USERNAME, username);
-                                                                        editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
-                                                                        editor.apply();
-                                                                        TokenAccess.setApiToken(prefs, apikey);
-                                                                        MainActivity.refreshApiManager();
-                                                                        image.close();
-                                                                        finish();
-                                                                    });
-                                                                }
-                                                            } catch (Exception je) {
-                                                                Logging.error("Failed to parse redeem JSON: ", je);
-                                                            }
-                                                        } else {
-                                                            Logging.warn("Redeem URL returned rc="+rc);
-                                                        }
-                                                    } catch (Exception e) {
-                                                        Logging.error("Error redeeming WifiDB token: ", e);
-                                                    }
-                                                }).start();
-                                                // let background thread finish work; return from analyzer
-                                                image.close();
-                                                return;
-                                            }
-                                        }
-                                    
-                                        }
-                                    }
-                                }
-                                image.close();
-                            }).addOnFailureListener(e -> {
-                                    Logging.error("Failed to process image for barcodes: ",e);
-                                    image.close();
-                                });
+                            // existing WiGLE activation format: username:authname:token
+                            if (dv.matches("^.*:[a-zA-Z0-9]*:[a-zA-Z0-9]*$")) {
+                                String[] tokens = dv.split(":");
+                                final SharedPreferences prefs = MainActivity.getMainActivity().getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                                final SharedPreferences.Editor editor = prefs.edit();
+                                editor.putString(PreferenceKeys.PREF_USERNAME, tokens[0]);
+                                editor.putString(PreferenceKeys.PREF_AUTHNAME, tokens[1]);
+                                editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
+                                editor.apply();
+                                TokenAccess.setApiToken(prefs, tokens[2]);
+                                MainActivity.refreshApiManager();
+                                try { image.close(); } catch (Exception ignored) {}
+                                finish();
+                                return;
                             }
-            }});
+
+                            // WifiDB one-time redeem URL, e.g. https://<host>/wifidb/cp/redeem_link.php?token=...
+                            if (dv.contains("redeem_link.php?token=")) {
+                                final String redeemUrl = dv.trim();
+                                new Thread(() -> {
+                                    try {
+                                        java.net.URL url = new java.net.URL(redeemUrl);
+                                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                                        conn.setRequestMethod("GET");
+                                        conn.setConnectTimeout(5000);
+                                        conn.setReadTimeout(5000);
+                                        int rc = conn.getResponseCode();
+                                        if (rc == 200) {
+                                            java.io.InputStream is = conn.getInputStream();
+                                            java.io.BufferedReader rd = new java.io.BufferedReader(new java.io.InputStreamReader(is));
+                                            StringBuilder sb = new StringBuilder();
+                                            String line;
+                                            while ((line = rd.readLine()) != null) sb.append(line);
+                                            rd.close();
+                                            String resp = sb.toString();
+                                            try {
+                                                JSONObject obj = new JSONObject(resp);
+                                                final String apikey = obj.optString("apikey", null);
+                                                final String username = obj.optString("username", null);
+                                                if (apikey != null && !apikey.isEmpty()) {
+                                                    runOnUiThread(() -> {
+                                                        final SharedPreferences prefs = MainActivity.getMainActivity().getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                                                        final SharedPreferences.Editor editor = prefs.edit();
+                                                        if (username != null) editor.putString(PreferenceKeys.PREF_USERNAME, username);
+                                                        editor.putBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
+                                                        editor.apply();
+                                                        TokenAccess.setApiToken(prefs, apikey);
+                                                        MainActivity.refreshApiManager();
+                                                        try { image.close(); } catch (Exception ignored) {}
+                                                        finish();
+                                                    });
+                                                }
+                                            } catch (Exception je) {
+                                                Logging.error("Failed to parse redeem JSON: ", je);
+                                            }
+                                        } else {
+                                            Logging.warn("Redeem URL returned rc=" + rc);
+                                        }
+                                    } catch (Exception e) {
+                                        Logging.error("Error redeeming WifiDB token: ", e);
+                                    }
+                                }).start();
+                                try { image.close(); } catch (Exception ignored) {}
+                                return;
+                            }
+                        }
+                    })
+                    .addOnFailureListener(e -> Logging.error("Failed to process image for barcodes: ", e))
+                    .addOnCompleteListener(task -> {
+                        try { image.close(); } catch (Exception ignored) {}
+                    });
+            }
+        });
 
         OrientationEventListener orientationEventListener = new OrientationEventListener(this) {
             @Override
