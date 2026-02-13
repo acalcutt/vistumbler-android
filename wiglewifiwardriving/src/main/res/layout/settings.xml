@@ -31,13 +31,26 @@
         style="?android:attr/listSeparatorTextViewStyle"
         />
 
-    <TextView
-        android:id="@+id/register"
-        android:layout_width="fill_parent"
+    <LinearLayout
+        android:id="@+id/register_buttons"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="24sp"
-        android:gravity="center_horizontal"
-        />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/register_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/register" />
+
+        <Button
+            android:id="@+id/activate_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/title_activity_activate" />
+    </LinearLayout>
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"

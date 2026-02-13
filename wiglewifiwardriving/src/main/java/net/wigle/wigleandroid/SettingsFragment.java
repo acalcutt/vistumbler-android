@@ -432,15 +432,19 @@ public final class SettingsFragment extends Fragment implements DialogListener {
         });
 
         // register link
-        final TextView register = view.findViewById(R.id.register);
-        try {
-            register.setText(Html.fromHtml(getString(R.string.registration_html_prompt),
-            Html.FROM_HTML_MODE_LEGACY));
-            register.setMovementMethod(LinkMovementMethod.getInstance());
-            updateRegister(view);
-        } catch (Exception ex) {
-            Logging.error("unable to create registration prompt from HTML");
-        }
+        final Button register = view.findViewById(R.id.register_button);
+        register.setOnClickListener(v -> {
+            final Intent intent = new Intent(getContext(), RegistrationActivity.class);
+            startActivity(intent);
+        });
+        final Button activate = view.findViewById(R.id.activate_button);
+        activate.setOnClickListener(v -> {
+            final Intent intent = new Intent(getContext(), ActivateActivity.class);
+            intent.setData(Uri.parse(ActivateActivity.BARCODE_INTENT_SCHEME+"://"+ActivateActivity.BARCODE_INTENT_HOST));
+            startActivity(intent);
+        });
+        updateRegister(view);
+
 
         user.setText( prefs.getString( PreferenceKeys.PREF_USERNAME, "" ) );
         user.addTextChangedListener( new SetWatcher() {
@@ -691,16 +695,16 @@ public final class SettingsFragment extends Fragment implements DialogListener {
             final String username = prefs.getString(PreferenceKeys.PREF_USERNAME, "");
             final boolean isAnonymous = prefs.getBoolean(PreferenceKeys.PREF_BE_ANONYMOUS, false);
             if (view != null) {
-                final TextView register = view.findViewById(R.id.register);
+                final View registerButtons = view.findViewById(R.id.register_buttons);
 
                 //ALIBI: ActivateAcitivity.receiveDetections sets isAnonymous = false
                 if ("".equals(username) || isAnonymous) {
-                    register.setEnabled(true);
-                    register.setVisibility(View.VISIBLE);
+                    registerButtons.setEnabled(true);
+                    registerButtons.setVisibility(View.VISIBLE);
                 } else {
                     // poof
-                    register.setEnabled(false);
-                    register.setVisibility(View.GONE);
+                    registerButtons.setEnabled(false);
+                    registerButtons.setVisibility(View.GONE);
                 }
             }
         }

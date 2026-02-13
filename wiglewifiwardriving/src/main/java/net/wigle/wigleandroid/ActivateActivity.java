@@ -31,6 +31,7 @@ import android.util.Size;
 import android.view.OrientationEventListener;
 import android.view.View;
 import android.widget.ImageButton;
+import android.widget.Toast;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.barcode.BarcodeScanner;
@@ -43,6 +44,11 @@ import org.json.JSONObject;
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -57,7 +63,9 @@ import java.util.concurrent.Executors;
 public class ActivateActivity extends AppCompatActivity {
 
     //intent string
-    public static final String barcodeIntent = "net.wigle.wigleandroid://activate";
+    public static final String BARCODE_INTENT_SCHEME = "net.wigle.wigleandroid";
+    public static final String BARCODE_INTENT_HOST = "activate";
+
 
     //log tag for activity
     private static final String LOG_TAG = "wigle.activate";
@@ -99,19 +107,10 @@ public class ActivateActivity extends AppCompatActivity {
             backButton.setOnClickListener(v -> finish());
         }
 
-        Uri data = getIntent().getData();
-        //DEBUG Logging.info("intent data: "+data+" matches: "+
-        //        ActivateActivity.barcodeIntent.equals(data.toString()));
-        if (data != null && ActivateActivity.barcodeIntent.equals(data.toString())) {
-            launchBarcodeScanning();
-        } else {
-            Log.e(LOG_TAG, "intent data: "+data+" did not match "+ActivateActivity.barcodeIntent);
-            finish();
-        }
+        launchBarcodeScanning();
     }
 
     private void launchBarcodeScanning() {
-        setContentView(R.layout.activity_activate);
         cameraView = findViewById(R.id.camera_view);
         BarcodeScannerOptions options =
                 new BarcodeScannerOptions.Builder()
@@ -195,22 +194,25 @@ public class ActivateActivity extends AppCompatActivity {
                             // WifiDB one-time redeem URL, e.g. https://<host>/wifidb/cp/redeem_link.php?token=...
                             if (dv.contains("redeem_link.php?token=")) {
                                 final String redeemUrl = dv.trim();
+                                Logging.info("Attempting to redeem WifiDB URL: " + redeemUrl);
                                 new Thread(() -> {
                                     try {
-                                        java.net.URL url = new java.net.URL(redeemUrl);
-                                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                                        URL url = new URL(redeemUrl);
+                                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                                         conn.setRequestMethod("GET");
                                         conn.setConnectTimeout(5000);
                                         conn.setReadTimeout(5000);
                                         int rc = conn.getResponseCode();
+                                        Logging.info("WifiDB redeem response code: " + rc);
                                         if (rc == 200) {
-                                            java.io.InputStream is = conn.getInputStream();
-                                            java.io.BufferedReader rd = new java.io.BufferedReader(new java.io.InputStreamReader(is));
+                                            InputStream is = conn.getInputStream();
+                                            BufferedReader rd = new BufferedReader(new InputStreamReader(is));
                                             StringBuilder sb = new StringBuilder();
                                             String line;
                                             while ((line = rd.readLine()) != null) sb.append(line);
                                             rd.close();
                                             String resp = sb.toString();
+                                            Logging.info("WifiDB redeem response body: " + resp);
                                             try {
                                                 JSONObject obj = new JSONObject(resp);
                                                 final String apikey = obj.optString("apikey", null);
@@ -224,18 +226,25 @@ public class ActivateActivity extends AppCompatActivity {
                                                         editor.apply();
                                                         TokenAccess.setApiToken(prefs, apikey);
                                                         MainActivity.refreshApiManager();
+                                                        Toast.makeText(getApplicationContext(), "Activation successful!", Toast.LENGTH_SHORT).show();
                                                         try { image.close(); } catch (Exception ignored) {}
                                                         finish();
                                                     });
+                                                } else {
+                                                    Logging.error("apikey not found in WifiDB response");
+                                                    runOnUiThread(() -> Toast.makeText(getApplicationContext(), "API Key not found in response", Toast.LENGTH_SHORT).show());
                                                 }
                                             } catch (Exception je) {
                                                 Logging.error("Failed to parse redeem JSON: ", je);
+                                                runOnUiThread(() -> Toast.makeText(getApplicationContext(), "Failed to parse server response", Toast.LENGTH_SHORT).show());
                                             }
                                         } else {
                                             Logging.warn("Redeem URL returned rc=" + rc);
+                                            runOnUiThread(() -> Toast.makeText(getApplicationContext(), "Server returned error: " + rc, Toast.LENGTH_SHORT).show());
                                         }
                                     } catch (Exception e) {
                                         Logging.error("Error redeeming WifiDB token: ", e);
+                                        runOnUiThread(() -> Toast.makeText(getApplicationContext(), "Network error redeeming token", Toast.LENGTH_SHORT).show());
                                     }
                                 }).start();
                                 try { image.close(); } catch (Exception ignored) {}
