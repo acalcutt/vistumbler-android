@@ -276,6 +276,8 @@
     <string name="uploads_button_upload">Upload Current Run</string>
     <string name="uploads_button_upload_and_clear">Upload and Clear</string>
     <string name="uploads_button_refresh">Refresh Status</string>
+    <string name="uploads_button_upload_db">Upload Full DB</string>
+    <string name="uploads_button_upload_db_and_clear">Upload Full DB and Clear DB</string>
     <string name="uploads_no_schedule">No schedule configured</string>
     <string name="upload_failed_toast">Upload failed</string>
     <string name="upload_preparing_toast">Preparing export...</string>
