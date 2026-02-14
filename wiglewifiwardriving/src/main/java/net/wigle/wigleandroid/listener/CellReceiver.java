@@ -40,6 +40,7 @@ import net.wigle.wigleandroid.util.CellNetworkLegend;
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
 import net.wigle.wigleandroid.util.ScanUtil;
+import net.wigle.wigleandroid.LiveMapUpdater;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -436,6 +437,11 @@ public class CellReceiver {
             }
             if (location != null && (newForRun || network.getLatLng() == null)) {
                 network.setLatLng(new LatLng(location.getLatitude(), location.getLongitude()));
+                try {
+                    LiveMapUpdater.addCellDevice(network.getBssid(), location.getLatitude(), location.getLongitude(), network.getLevel());
+                } catch (Exception ex) {
+                    // ignore
+                }
             }
             if (location != null) {
                 dbHelper.addObservation(network, location, newForRun);

@@ -38,6 +38,7 @@ import android.content.SharedPreferences;
 import android.location.Location;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import net.wigle.wigleandroid.LiveMapUpdater;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
@@ -244,6 +245,15 @@ public class WifiReceiver extends BroadcastReceiver {
                     final LatLng LatLng = new LatLng( location.getLatitude(), location.getLongitude() );
                     network.setLatLng( LatLng );
                     MainActivity.addNetworkToMap(network);
+                    try {
+                        String sec = "secure";
+                        int crypto = network.getCrypto();
+                        if (crypto == net.wigle.wigleandroid.model.Network.CRYPTO_NONE) sec = "open";
+                        else if (crypto == net.wigle.wigleandroid.model.Network.CRYPTO_WEP) sec = "wep";
+                        LiveMapUpdater.addWifiDevice(network.getBssid(), location.getLatitude(), location.getLongitude(), network.getLevel(), sec);
+                    } catch (Exception ex) {
+                        // ignore live map update failures
+                    }
                 }
 
                 // if we're showing current, or this was just added, put on the list

@@ -47,6 +47,7 @@ import net.wigle.wigleandroid.ui.WiGLEToast;
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
 import net.wigle.wigleandroid.util.ScanUtil;
+import net.wigle.wigleandroid.LiveMapUpdater;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -802,6 +803,11 @@ public final class BluetoothReceiver extends BroadcastReceiver implements LeScan
             // set the LatLng for mapping
             final LatLng LatLng = new LatLng( location.getLatitude(), location.getLongitude() );
             network.setLatLng( LatLng );
+            try {
+                LiveMapUpdater.addBtDevice(network.getBssid(), location.getLatitude(), location.getLongitude(), network.getLevel());
+            } catch (Exception ex) {
+                // ignore
+            }
         }
 
         final MainActivity m = MainActivity.getMainActivity();
