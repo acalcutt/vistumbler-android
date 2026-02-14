@@ -208,10 +208,35 @@ public class WifiDBApiManager {
                         if (null != response.body()) {
                             try (ResponseBody responseBody = response.body()) {
                                 final String responseBodyString = responseBody.string();
-                                Logging.info("WifiDB Upload Response: " + responseBodyString);
-                                UploadReseponse r =  new Gson().fromJson(responseBodyString,
-                                        UploadReseponse.class);
-                                completedListener.onTaskSucceeded(r);
+                                    Logging.info("WifiDB Upload Response: " + responseBodyString);
+                                    try {
+                                        final org.json.JSONObject json = new org.json.JSONObject(responseBodyString);
+                                        if (json.has("error")) {
+                                            // server returned an error payload
+                                            completedListener.onTaskFailed(response.code(), json);
+                                        } else if (json.has("import")) {
+                                            // WifiDB v2 returns an "import" object on success
+                                            final UploadReseponse r = new UploadReseponse();
+                                            r.setSuccess(Boolean.TRUE);
+                                            final UploadReseponse.UploadResultsResponse res = r.new UploadResultsResponse();
+                                            final org.json.JSONObject imp = json.getJSONObject("import");
+                                            res.setFilename(imp.optString("title", imp.optString("filename", "")));
+                                            r.setResults(res);
+                                            completedListener.onTaskSucceeded(r);
+                                        } else {
+                                            // try to parse into UploadReseponse (fallback)
+                                            final UploadReseponse r = new Gson().fromJson(responseBodyString,
+                                                    UploadReseponse.class);
+                                            if (r != null && Boolean.TRUE.equals(r.getSuccess())) {
+                                                completedListener.onTaskSucceeded(r);
+                                            } else {
+                                                completedListener.onTaskFailed(response.code(), null);
+                                            }
+                                        }
+                                    } catch (final Exception e) {
+                                        Logging.error("Failed to parse WifiDB response: ", e);
+                                        completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                                    }
                             } catch (JsonSyntaxException e) {
                                 completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
                             }
@@ -300,11 +325,33 @@ public class WifiDBApiManager {
                 } else {
                     if (null != response.body()) {
                         try (ResponseBody responseBody = response.body()) {
-                            final String responseBodyString = responseBody.string();
-                            Logging.info("WifiDB Upload Response: " + responseBodyString);
-                            UploadReseponse r =  new Gson().fromJson(responseBodyString,
-                                    UploadReseponse.class);
-                            completedListener.onTaskSucceeded(r);
+                                final String responseBodyString = responseBody.string();
+                                Logging.info("WifiDB Upload Response: " + responseBodyString);
+                                try {
+                                    final org.json.JSONObject json = new org.json.JSONObject(responseBodyString);
+                                    if (json.has("error")) {
+                                        completedListener.onTaskFailed(response.code(), json);
+                                    } else if (json.has("import")) {
+                                        final UploadReseponse r = new UploadReseponse();
+                                        r.setSuccess(Boolean.TRUE);
+                                        final UploadReseponse.UploadResultsResponse res = r.new UploadResultsResponse();
+                                        final org.json.JSONObject imp = json.getJSONObject("import");
+                                        res.setFilename(imp.optString("title", imp.optString("filename", "")));
+                                        r.setResults(res);
+                                        completedListener.onTaskSucceeded(r);
+                                    } else {
+                                        final UploadReseponse r = new Gson().fromJson(responseBodyString,
+                                                UploadReseponse.class);
+                                        if (r != null && Boolean.TRUE.equals(r.getSuccess())) {
+                                            completedListener.onTaskSucceeded(r);
+                                        } else {
+                                            completedListener.onTaskFailed(response.code(), null);
+                                        }
+                                    }
+                                } catch (final Exception e) {
+                                    Logging.error("Failed to parse WifiDB response: ", e);
+                                    completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                                }
                         } catch (JsonSyntaxException e) {
                             completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
                         }

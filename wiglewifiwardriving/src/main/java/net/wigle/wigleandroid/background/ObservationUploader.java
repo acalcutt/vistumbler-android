@@ -459,9 +459,6 @@ public class ObservationUploader extends AbstractProgressApiRequest {
                 return writeFileWithCursor(context, fos, bundle, countStats, cursor, prefs);
             }
         } finally {
-            if (fos != null) {
-                fos.close();
-            }
             if (cursor != null) {
                 cursor.close();
             }

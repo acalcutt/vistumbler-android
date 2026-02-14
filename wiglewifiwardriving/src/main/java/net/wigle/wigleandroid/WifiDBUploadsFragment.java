@@ -1,12 +1,7 @@
 package net.wigle.wigleandroid;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -18,10 +13,8 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
-import net.wigle.wigleandroid.background.ApiListener;
 import net.wigle.wigleandroid.background.BackgroundGuiHandler;
 import net.wigle.wigleandroid.background.ObservationUploader;
 import net.wigle.wigleandroid.model.api.UploadReseponse;
@@ -33,7 +26,6 @@ import net.wigle.wigleandroid.util.PreferenceKeys;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -54,11 +46,17 @@ public class WifiDBUploadsFragment extends Fragment {
 
         wifiDBApiManager = new WifiDBApiManager(getContext());
 
-        Button uploadButton = view.findViewById(R.id.button_upload);
-        uploadButton.setOnClickListener(v -> startWriteAndUpload(false));
+        Button uploadRunButton = view.findViewById(R.id.button_upload_run);
+        uploadRunButton.setOnClickListener(v -> startWriteAndUpload(false, false));
 
-        Button uploadAndClearButton = view.findViewById(R.id.button_upload_and_clear);
-        uploadAndClearButton.setOnClickListener(v -> startWriteAndUpload(true));
+        Button uploadRunAndClearButton = view.findViewById(R.id.button_upload_run_and_clear);
+        uploadRunAndClearButton.setOnClickListener(v -> startWriteAndUpload(true, false));
+
+        Button uploadFullDbButton = view.findViewById(R.id.button_upload_full_db);
+        uploadFullDbButton.setOnClickListener(v -> startWriteAndUpload(false, true));
+
+        Button uploadFullDbAndClearButton = view.findViewById(R.id.button_upload_full_db_and_clear);
+        uploadFullDbAndClearButton.setOnClickListener(v -> startWriteAndUpload(true, true));
 
         scheduleDetails = view.findViewById(R.id.text_schedule_details);
         getSchedule();
@@ -71,7 +69,7 @@ public class WifiDBUploadsFragment extends Fragment {
         super.onDestroy();
     }
 
-    private void startWriteAndUpload(final boolean clearAfter) {
+    private void startWriteAndUpload(final boolean clearAfter, final boolean uploadAll) {
         this.clearAfterThisUpload = clearAfter;
         // start an ObservationUploader that only writes the current run file (justWriteFile=true, writeRun=true)
         try {
@@ -98,7 +96,7 @@ public class WifiDBUploadsFragment extends Fragment {
                 } catch (final JSONException e) {
                     Logging.error("Error getting bundle from result", e);
                 }
-            }, true, false, true, null, null, bundle, wifiDbUri, uploadUrl);
+            }, true, uploadAll, !uploadAll, null, null, bundle, wifiDbUri, uploadUrl);
             ou.startDownload(null);
             scheduleDetails.setText(R.string.upload_preparing_toast);
         } catch (Exception ex) {
@@ -141,7 +139,21 @@ public class WifiDBUploadsFragment extends Fragment {
                 if (getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
                         Toast.makeText(getContext(), R.string.upload_failed_toast, Toast.LENGTH_SHORT).show();
-                        scheduleDetails.setText(getString(R.string.upload_failed_toast) + ": " + status);
+                        String msg = getString(R.string.upload_failed_toast) + ": " + status;
+                        if (error != null) {
+                            try {
+                                if (error.has("error")) {
+                                    String serr = error.getString("error");
+                                    if (serr != null && !serr.isEmpty()) msg += " - " + serr;
+                                } else if (error.has("message")) {
+                                    String serr = error.getString("message");
+                                    if (serr != null && !serr.isEmpty()) msg += " - " + serr;
+                                }
+                            } catch (JSONException je) {
+                                Logging.error("Error reading upload error JSON", je);
+                            }
+                        }
+                        scheduleDetails.setText(msg);
                     });
                 }
             }
@@ -185,7 +197,21 @@ public class WifiDBUploadsFragment extends Fragment {
                 if (getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
                         Toast.makeText(getContext(), R.string.upload_failed_toast, Toast.LENGTH_SHORT).show();
-                        scheduleDetails.setText(getString(R.string.upload_failed_toast) + ": " + status);
+                        String msg = getString(R.string.upload_failed_toast) + ": " + status;
+                        if (error != null) {
+                            try {
+                                if (error.has("error")) {
+                                    String serr = error.getString("error");
+                                    if (serr != null && !serr.isEmpty()) msg += " - " + serr;
+                                } else if (error.has("message")) {
+                                    String serr = error.getString("message");
+                                    if (serr != null && !serr.isEmpty()) msg += " - " + serr;
+                                }
+                            } catch (JSONException je) {
+                                Logging.error("Error reading upload error JSON", je);
+                            }
+                        }
+                        scheduleDetails.setText(msg);
                     });
                 }
             }

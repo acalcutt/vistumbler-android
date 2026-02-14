@@ -6,16 +6,28 @@
     android:padding="16dp">
 
     <Button
-        android:id="@+id/button_upload"
+        android:id="@+id/button_upload_run"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/uploads_button_upload" />
+        android:text="Upload Current Run" />
 
     <Button
-        android:id="@+id/button_upload_and_clear"
+        android:id="@+id/button_upload_run_and_clear"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/uploads_button_upload_and_clear" />
+        android:text="Upload Current Run and Clear DB" />
+
+    <Button
+        android:id="@+id/button_upload_full_db"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Upload Full DB" />
+
+    <Button
+        android:id="@+id/button_upload_full_db_and_clear"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Upload Full DB and Clear DB" />
 
     <TextView
         android:id="@+id/text_schedule_details"
