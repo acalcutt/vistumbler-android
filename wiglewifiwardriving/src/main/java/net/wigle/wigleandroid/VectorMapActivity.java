@@ -58,6 +58,7 @@ import java.io.BufferedReader;
 import java.net.URL;
 import java.net.HttpURLConnection;
 import java.lang.StringBuilder;
+import android.os.Looper;
 
 public class VectorMapActivity extends AppCompatActivity {
     private MapView mapView;
@@ -74,6 +75,12 @@ public class VectorMapActivity extends AppCompatActivity {
     private int currentInsetBottom = 0;
     private int fabOriginalBottomMargin = 0;
     private int layerBarOriginalTopMargin = 0;
+    private static final String LIVE_DEBUG_TOKEN = "WIGLE_LIVE_DBG";
+    private static final String LIVE_WIFI_OPEN_LAYER_ID = "live_wifi_open_layer";
+    private static final String LIVE_WIFI_WEP_LAYER_ID = "live_wifi_wep_layer";
+    private static final String LIVE_WIFI_SECURE_LAYER_ID = "live_wifi_secure_layer";
+    private static final String LIVE_BT_LAYER_ID = "live_bt_layer";
+    private static final String LIVE_CELL_LAYER_ID = "live_cell_layer";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -169,76 +176,25 @@ public class VectorMapActivity extends AppCompatActivity {
                                     .zoom(10.0)
                                     .build());
                             attemptEnableLocationComponent();
-                            // add live GeoJSON sources and layers
+                            // add live GeoJSON sources - layers will be created by ensureLiveLayersExist
                             try {
-                                // wifi source + layers by security
+                                // wifi source
                                 wifiSource = new GeoJsonSource("live_wifi", FeatureCollection.fromFeatures(new Feature[]{}));
-                                style.addSource(wifiSource);
-                                CircleLayer wifiOpen = new CircleLayer("live_wifi_open_layer", "live_wifi");
-                                wifiOpen.setProperties(
-                                    PropertyFactory.circleColor(Color.parseColor("#4CAF50")),
-                                    PropertyFactory.circleRadius(9f),
-                                    PropertyFactory.circleOpacity(0.9f)
-                                );
-                                   wifiOpen.setFilter(Expression.any(
-                                       Expression.eq(Expression.get("security"), Expression.literal("open")),
-                                       Expression.eq(Expression.get("sectype"), Expression.literal(1)),
-                                       Expression.eq(Expression.get("sectype"), Expression.literal("1"))
-                                   ));
-                                style.addLayer(wifiOpen);
+                                loadedStyle.addSource(wifiSource);
 
-                                CircleLayer wifiWep = new CircleLayer("live_wifi_wep_layer", "live_wifi");
-                                wifiWep.setProperties(
-                                    PropertyFactory.circleColor(Color.parseColor("#FF9800")),
-                                    PropertyFactory.circleRadius(9f),
-                                    PropertyFactory.circleOpacity(0.9f)
-                                );
-                                   wifiWep.setFilter(Expression.any(
-                                       Expression.eq(Expression.get("security"), Expression.literal("wep")),
-                                       Expression.eq(Expression.get("sectype"), Expression.literal(2)),
-                                       Expression.eq(Expression.get("sectype"), Expression.literal("2"))
-                                   ));
-                                style.addLayer(wifiWep);
-
-                                CircleLayer wifiSecure = new CircleLayer("live_wifi_secure_layer", "live_wifi");
-                                wifiSecure.setProperties(
-                                    PropertyFactory.circleColor(Color.parseColor("#F44336")),
-                                    PropertyFactory.circleRadius(9f),
-                                    PropertyFactory.circleOpacity(0.9f)
-                                );
-                                   wifiSecure.setFilter(Expression.any(
-                                       Expression.eq(Expression.get("security"), Expression.literal("secure")),
-                                       Expression.eq(Expression.get("sectype"), Expression.literal(3)),
-                                       Expression.eq(Expression.get("sectype"), Expression.literal("3"))
-                                   ));
-                                style.addLayer(wifiSecure);
-
-                                // bluetooth source + layer (blue)
+                                // bluetooth source
                                 btSource = new GeoJsonSource("live_bt", FeatureCollection.fromFeatures(new Feature[]{}));
-                                style.addSource(btSource);
-                                CircleLayer btLayer = new CircleLayer("live_bt_layer", "live_bt");
-                                btLayer.setProperties(
-                                    PropertyFactory.circleColor(Color.parseColor("#2196F3")),
-                                    PropertyFactory.circleRadius(9f),
-                                    PropertyFactory.circleOpacity(0.9f)
-                                );
-                                style.addLayer(btLayer);
+                                loadedStyle.addSource(btSource);
 
-                                // cell source + layer (purple)
+                                // cell source
                                 cellSource = new GeoJsonSource("live_cell", FeatureCollection.fromFeatures(new Feature[]{}));
-                                style.addSource(cellSource);
-                                CircleLayer cellLayer = new CircleLayer("live_cell_layer", "live_cell");
-                                cellLayer.setProperties(
-                                    PropertyFactory.circleColor(Color.parseColor("#9C27B0")),
-                                        PropertyFactory.circleRadius(9f),
-                                        PropertyFactory.circleOpacity(0.9f)
-                                );
-                                style.addLayer(cellLayer);
+                                loadedStyle.addSource(cellSource);
+                                
+                                // Create initial layers using the helper function
+                                ensureLiveLayersExist();
                             } catch (Exception ex) {
-                                // ignore layer creation failures
+                                Log.w("VectorMapActivity", "Failed to create live sources/layers: " + ex.getMessage());
                             }
-                            // ensure live layers are above any pre-existing style layers
-                            try { bringLiveLayersToTop(); } catch (Exception ignored) {}
                             // apply any saved insets to map padding now that style is loaded
                             try {
                                 int layerBarHeight = (layerButtonBar != null) ? layerButtonBar.getHeight() : 0;
@@ -254,8 +210,8 @@ public class VectorMapActivity extends AppCompatActivity {
                                         try {
                                             PointF screenPt = mapLibreMap.getProjection().toScreenLocation(point);
                                             List<Feature> features = mapLibreMap.queryRenderedFeatures(screenPt,
-                                                    "live_wifi_open_layer", "live_wifi_wep_layer", "live_wifi_secure_layer",
-                                                    "live_bt_layer", "live_cell_layer");
+                                                    LIVE_WIFI_OPEN_LAYER_ID, LIVE_WIFI_WEP_LAYER_ID, LIVE_WIFI_SECURE_LAYER_ID,
+                                                    LIVE_BT_LAYER_ID, LIVE_CELL_LAYER_ID);
                                             if (features == null || features.isEmpty()) return false;
                                             Set<String> seen = new HashSet<>();
                                             StringBuilder out = new StringBuilder();
@@ -342,6 +298,8 @@ public class VectorMapActivity extends AppCompatActivity {
                             refreshLayerButtonLabels();
                             // dump style summary for debugging
                             logStyleSummary();
+                            // re-register with LiveMapUpdater so it will push any cached live features now that style/sources are available
+                            try { LiveMapUpdater.setActiveActivity(VectorMapActivity.this); } catch (Exception ignored) {}
                         }
                     });
                 } catch (Exception ex) {
@@ -354,7 +312,7 @@ public class VectorMapActivity extends AppCompatActivity {
     private void logStyleSummary() {
         try {
             if (loadedStyle == null) {
-                Log.i("VectorMapActivity", "Style not loaded for summary");
+                Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": Style not loaded for summary");
                 return;
             }
             boolean hasWifiDB = loadedStyle.getSource("WifiDB") != null;
@@ -362,21 +320,27 @@ public class VectorMapActivity extends AppCompatActivity {
             boolean hasWifiDBCells = loadedStyle.getSource("WifiDB_cells") != null;
             boolean hasDailys = loadedStyle.getSource("dailys") != null;
             boolean hasLatests = loadedStyle.getSource("latests") != null;
-            Log.i("VectorMapActivity", "Style summary: sources present - WifiDB=" + hasWifiDB + " WifiDB_newest=" + hasWifiDBNewest + " WifiDB_cells=" + hasWifiDBCells + " dailys=" + hasDailys + " latests=" + hasLatests);
+            boolean hasLiveWifi = loadedStyle.getSource("live_wifi") != null;
+            boolean hasLiveBt = loadedStyle.getSource("live_bt") != null;
+            boolean hasLiveCell = loadedStyle.getSource("live_cell") != null;
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": Style summary: sources present - WifiDB=" + hasWifiDB + " WifiDB_newest=" + hasWifiDBNewest + " WifiDB_cells=" + hasWifiDBCells + " dailys=" + hasDailys + " latests=" + hasLatests);
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": Live sources - live_wifi=" + hasLiveWifi + " live_bt=" + hasLiveBt + " live_cell=" + hasLiveCell);
             List<Layer> all = loadedStyle.getLayers();
-            Log.i("VectorMapActivity", "Style has " + (all == null ? 0 : all.size()) + " layers. Listing up to 40 ids:");
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": Style has " + (all == null ? 0 : all.size()) + " layers. Listing up to 40 ids:");
             if (all != null) {
                 int c = 0;
                 for (Layer L : all) {
                     try {
-                        Log.i("VectorMapActivity", " layer[" + c + "] id=" + L.getId());
+                        String lid = L.getId();
+                        boolean isLive = lid != null && (lid.startsWith("live_") || lid.contains("live_wifi") || lid.contains("live_bt") || lid.contains("live_cell"));
+                        Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": layer[" + c + "] id=" + lid + (isLive ? " [LIVE]" : ""));
                     } catch (Exception ignored) {}
                     c++;
                     if (c > 40) break;
                 }
             }
         } catch (Exception ex) {
-            Log.i("VectorMapActivity", "Failed to log style summary: " + ex.getMessage());
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": Failed to log style summary: " + ex.getMessage());
         }
     }
 
@@ -387,7 +351,7 @@ public class VectorMapActivity extends AppCompatActivity {
         try {
             if (loadedStyle == null || layer == null) return;
             // prefer to insert server layers below the main live wifi open layer
-            String ref = "live_wifi_open_layer";
+            String ref = LIVE_WIFI_OPEN_LAYER_ID;
             if (loadedStyle.getLayer(ref) != null) {
                 try { loadedStyle.addLayerBelow(layer, ref); return; } catch (Exception ignored) {}
             }
@@ -397,23 +361,16 @@ public class VectorMapActivity extends AppCompatActivity {
     }
 
     /**
-     * Ensure the live layers are on top by removing and re-adding them (which appends them).
+     * Ensure the live layers are on top. 
+     * NOTE: Removing a layer invalidates its Java reference, so we must create fresh layer objects.
      */
     private void bringLiveLayersToTop() {
         if (loadedStyle == null) return;
-        String[] liveIds = new String[]{"live_wifi_open_layer", "live_wifi_wep_layer", "live_wifi_secure_layer", "live_bt_layer", "live_cell_layer"};
-        // first, re-add our explicit live layers to top
-        for (String id : liveIds) {
-            try {
-                Layer L = loadedStyle.getLayer(id);
-                if (L == null) continue;
-                try { loadedStyle.removeLayer(id); } catch (Exception ignored) {}
-                try { loadedStyle.addLayer(L); } catch (Exception ignored) {}
-            } catch (Exception ignored) {}
-        }
+        String[] liveIds = new String[]{LIVE_WIFI_OPEN_LAYER_ID, LIVE_WIFI_WEP_LAYER_ID, LIVE_WIFI_SECURE_LAYER_ID, LIVE_BT_LAYER_ID, LIVE_CELL_LAYER_ID};
+        Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": bringLiveLayersToTop start");
 
-        // Avoid removing MapLibre-created location/pulsing layers (removing them can break the location component).
-        // Instead, detect any dynamic location-like layer ids and, if found, re-insert our live layers above the last detected id.
+        // Detect any dynamic location-like layer ids so we can position above them
+        String anchor = null;
         try {
             List<String> dynamicIds = new java.util.ArrayList<>();
             List<Layer> all = loadedStyle.getLayers();
@@ -429,262 +386,165 @@ public class VectorMapActivity extends AppCompatActivity {
                     } catch (Exception ignored) {}
                 }
             }
-            // If we found any dynamic location-like layer ids, try to place our live layers above the last one so they render on top.
             if (!dynamicIds.isEmpty()) {
-                String anchor = dynamicIds.get(dynamicIds.size() - 1);
-                for (String id : liveIds) {
+                anchor = dynamicIds.get(dynamicIds.size() - 1);
+                Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": bringLiveLayersToTop: dynamicIds=" + dynamicIds + " anchor=" + anchor);
+            }
+        } catch (Exception ignored) {}
+
+        // For each live layer, remove it and create a fresh layer object to re-add
+        // (Once removeLayer is called, the old Layer reference becomes invalid in MapLibre)
+        for (String id : liveIds) {
+            try {
+                if (loadedStyle.getLayer(id) != null) {
+                    loadedStyle.removeLayer(id);
+                }
+                // Create fresh layer based on id
+                CircleLayer fresh = createFreshLiveLayer(id);
+                if (fresh == null) continue;
+                if (anchor != null) {
                     try {
-                        Layer L = loadedStyle.getLayer(id);
-                        if (L == null) continue;
-                        try { loadedStyle.removeLayer(id); } catch (Exception ignored) {}
-                        try { loadedStyle.addLayerAbove(L, anchor); } catch (Exception ex) { try { loadedStyle.addLayer(L); } catch (Exception ignored) {} }
-                    } catch (Exception ignored) {}
+                        loadedStyle.addLayerAbove(fresh, anchor);
+                    } catch (Exception ex) {
+                        Log.w("VectorMapActivity", "addLayerAbove failed for " + id + ": " + ex.getMessage());
+                        try { loadedStyle.addLayer(fresh); } catch (Exception ex2) { Log.w("VectorMapActivity", "fallback addLayer also failed for " + id + ": " + ex2.getMessage()); }
+                    }
+                } else {
+                    loadedStyle.addLayer(fresh);
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ex) { Log.w("VectorMapActivity", "Exception in bringLiveLayersToTop for " + id + ": " + ex.getMessage()); }
+        }
+
+        Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": bringLiveLayersToTop end");
     }
 
     /**
-     * Add a server layer in the configured bottom-to-top order so older layers remain below newer ones.
-     * logicalTag should be the logical layer identifier (e.g. "WifiDB_Legacy", "WifiDB_monthly", "dailys", "cell_networks").
+     * Create a fresh CircleLayer for the given live layer ID.
      */
-    private void addServerLayerInOrder(Layer layer, String logicalTag) {
+    private CircleLayer createFreshLiveLayer(String layerId) {
         try {
-            if (loadedStyle == null || layer == null) return;
-            // bottom -> top order
-            String[] order = new String[]{"WifiDB_Legacy", "WifiDB_2to3year", "WifiDB_1to2year", "WifiDB_0to1year", "WifiDB_monthly", "WifiDB_weekly", "dailys", "latests", "cell_networks"};
-            String tagLower = logicalTag == null ? "" : logicalTag.toLowerCase(Locale.US);
-            int idx = -1;
-            for (int i = 0; i < order.length; i++) {
-                String o = order[i];
-                if (tagLower.contains(o.toLowerCase(Locale.US)) || o.equalsIgnoreCase(logicalTag)) { idx = i; break; }
+            if (LIVE_WIFI_OPEN_LAYER_ID.equals(layerId)) {
+                CircleLayer layer = new CircleLayer(layerId, "live_wifi");
+                layer.setProperties(
+                    PropertyFactory.circleColor(Color.parseColor("#4CAF50")),
+                    PropertyFactory.circleRadius(4f),
+                    PropertyFactory.circleOpacity(0.9f)
+                );
+                layer.setFilter(Expression.any(
+                    Expression.eq(Expression.get("security"), Expression.literal("open")),
+                    Expression.eq(Expression.get("sectype"), Expression.literal(1)),
+                    Expression.eq(Expression.get("sectype"), Expression.literal("1"))
+                ));
+                return layer;
+            } else if (LIVE_WIFI_WEP_LAYER_ID.equals(layerId)) {
+                CircleLayer layer = new CircleLayer(layerId, "live_wifi");
+                layer.setProperties(
+                    PropertyFactory.circleColor(Color.parseColor("#FF9800")),
+                    PropertyFactory.circleRadius(4f),
+                    PropertyFactory.circleOpacity(0.9f)
+                );
+                layer.setFilter(Expression.any(
+                    Expression.eq(Expression.get("security"), Expression.literal("wep")),
+                    Expression.eq(Expression.get("sectype"), Expression.literal(2)),
+                    Expression.eq(Expression.get("sectype"), Expression.literal("2"))
+                ));
+                return layer;
+            } else if (LIVE_WIFI_SECURE_LAYER_ID.equals(layerId)) {
+                CircleLayer layer = new CircleLayer(layerId, "live_wifi");
+                layer.setProperties(
+                    PropertyFactory.circleColor(Color.parseColor("#F44336")),
+                    PropertyFactory.circleRadius(4f),
+                    PropertyFactory.circleOpacity(0.9f)
+                );
+                layer.setFilter(Expression.any(
+                    Expression.eq(Expression.get("security"), Expression.literal("secure")),
+                    Expression.eq(Expression.get("sectype"), Expression.literal(3)),
+                    Expression.eq(Expression.get("sectype"), Expression.literal("3"))
+                ));
+                return layer;
+            } else if (LIVE_BT_LAYER_ID.equals(layerId)) {
+                CircleLayer layer = new CircleLayer(layerId, "live_bt");
+                layer.setProperties(
+                    PropertyFactory.circleColor(Color.parseColor("#2196F3")),
+                    PropertyFactory.circleRadius(4f),
+                    PropertyFactory.circleOpacity(0.9f)
+                );
+                return layer;
+            } else if (LIVE_CELL_LAYER_ID.equals(layerId)) {
+                CircleLayer layer = new CircleLayer(layerId, "live_cell");
+                layer.setProperties(
+                    PropertyFactory.circleColor(Color.parseColor("#9C27B0")),
+                    PropertyFactory.circleRadius(4f),
+                    PropertyFactory.circleOpacity(0.9f)
+                );
+                return layer;
             }
-            // fallback heuristics
-            if (idx == -1) {
-                if (tagLower.contains("daily") || tagLower.contains("day") || tagLower.contains("dailys")) idx = 6;
-                else if (tagLower.contains("week")) idx = 5;
-                else if (tagLower.contains("month")) idx = 4;
-                else if (tagLower.contains("year") || tagLower.contains("0to1") || tagLower.contains("latest") || tagLower.contains("newest")) idx = 3;
-                else if (tagLower.contains("cell")) idx = 8;
-            }
-
-            // try to find an existing layer that should be above this one (higher index) and insert below it
-            if (idx >= 0) {
-                for (int j = idx + 1; j < order.length; j++) {
-                    String want = order[j].toLowerCase(Locale.US);
-                    for (Layer L : loadedStyle.getLayers()) {
-                        try {
-                            String lid = L.getId();
-                            if (lid != null && lid.toLowerCase(Locale.US).contains(want)) {
-                                try { loadedStyle.addLayerBelow(layer, lid); return; } catch (Exception ignored) {}
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                }
-                // otherwise try to insert above a lower-index layer
-                for (int j = idx - 1; j >= 0; j--) {
-                    String want = order[j].toLowerCase(Locale.US);
-                    for (Layer L : loadedStyle.getLayers()) {
-                        try {
-                            String lid = L.getId();
-                            if (lid != null && lid.toLowerCase(Locale.US).contains(want)) {
-                                try { loadedStyle.addLayerAbove(layer, lid); return; } catch (Exception ignored) {}
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-            // no helpful anchors found — fall back to placing below live layers
-            addLayerBelowLive(layer);
-        } catch (Exception ignored) {}
-    }
-
-    /**
-     * Create a GeoJSON source from a remote URL and add a CircleLayer styled for server-side historic points.
-     * The source id will be `srv_<layerId>` and layer id `srv_<layerId>_layer`.
-     */
-    private void ensureServerGeoJsonLayer(String layerId) {
-        if (loadedStyle == null) return;
-        Log.i("VectorMapActivity", "ensureServerGeoJsonLayer called for: " + layerId);
-        try {
-            final String srcId = "srv_" + layerId;
-            final String layerName = srcId + "_layer";
-            if (loadedStyle.getSource(srcId) != null) return; // already added
-
-            // Use the v1 GeoJSON API on wifidb.net for these server layers; do not accept arbitrary full-URLs.
-            String geojsonUrl;
-            String base = "https://wifidb.net";
-            String lower = layerId.toLowerCase(Locale.US);
-
-            // If the style already contains a vector source for WifiDB cells, create a vector-backed layer
-            try {
-                if (loadedStyle.getSource("WifiDB_cells") != null && (layerId.equalsIgnoreCase("WifiDB_cells") || layerId.equalsIgnoreCase("cell_networks") || lower.contains("cell"))) {
-                    // create a circle layer that uses the existing vector source and source-layer 'cell_networks'
-                    CircleLayer vecLay = new CircleLayer(layerName, "WifiDB_cells");
-                    try { vecLay.setSourceLayer("cell_networks"); } catch (Exception ignored) {}
-                    vecLay.setProperties(
-                            PropertyFactory.circleColor(Color.parseColor("#885FCD")),
-                            PropertyFactory.circleRadius(2.25f),
-                            PropertyFactory.circleOpacity(1f),
-                            PropertyFactory.circleBlur(0.5f)
-                    );
-                    addServerLayerInOrder(vecLay, layerId);
-                    Log.i("VectorMapActivity", "Added vector-backed cell layer for: " + layerId);
-                    bringLiveLayersToTop();
-                    return;
-                }
-            } catch (Exception ignored) {}
-
-            // If the style contains vector sources for APs (WifiDB or WifiDB_newest), add matching vector-backed layers
-            try {
-                // mapping of known AP layers to colors/radii (based on PHP CreateApLayer calls)
-                if (loadedStyle.getSource("WifiDB") != null) {
-                    if (layerId.equalsIgnoreCase("WifiDB_Legacy") || layerId.equalsIgnoreCase("WifiDB_2to3year") || layerId.equalsIgnoreCase("WifiDB_1to2year")) {
-                        String lidLower = layerId.toLowerCase(Locale.US);
-                        String openColor = "#00802b";
-                        String wepColor = "#cc7a00";
-                        String secureColor = "#b30000";
-                        float radius = 3f;
-                        if (lidLower.contains("2to3")) { openColor = "#00b33c"; wepColor = "#e68a00"; secureColor = "#cc0000"; radius = 2.75f; }
-                        else if (lidLower.contains("1to2")) { openColor = "#00e64d"; wepColor = "#ff9900"; secureColor = "#e60000"; radius = 2.5f; }
-
-                        CircleLayer openL = new CircleLayer(layerName + "_open", "WifiDB");
-                        try { openL.setSourceLayer(layerId); } catch (Exception ignored) {}
-                        openL.setProperties(PropertyFactory.circleColor(Color.parseColor(openColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(1f), PropertyFactory.circleBlur(0.5f));
-                        openL.setFilter(Expression.any(
-                            Expression.eq(Expression.get("security"), Expression.literal("open")),
-                            Expression.eq(Expression.get("sectype"), Expression.literal(1)),
-                            Expression.eq(Expression.get("sectype"), Expression.literal("1"))
-                        ));
-                        addServerLayerInOrder(openL, layerId);
-
-                        CircleLayer wepL = new CircleLayer(layerName + "_wep", "WifiDB");
-                        try { wepL.setSourceLayer(layerId); } catch (Exception ignored) {}
-                        wepL.setProperties(PropertyFactory.circleColor(Color.parseColor(wepColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(1f), PropertyFactory.circleBlur(0.5f));
-                        wepL.setFilter(Expression.any(
-                            Expression.eq(Expression.get("security"), Expression.literal("wep")),
-                            Expression.eq(Expression.get("sectype"), Expression.literal(2)),
-                            Expression.eq(Expression.get("sectype"), Expression.literal("2"))
-                        ));
-                        addServerLayerInOrder(wepL, layerId);
-
-                        CircleLayer secL = new CircleLayer(layerName + "_secure", "WifiDB");
-                        try { secL.setSourceLayer(layerId); } catch (Exception ignored) {}
-                        secL.setProperties(PropertyFactory.circleColor(Color.parseColor(secureColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(1f), PropertyFactory.circleBlur(0.5f));
-                        secL.setFilter(Expression.any(
-                            Expression.eq(Expression.get("security"), Expression.literal("secure")),
-                            Expression.eq(Expression.get("sectype"), Expression.literal(3)),
-                            Expression.eq(Expression.get("sectype"), Expression.literal("3"))
-                        ));
-                        addServerLayerInOrder(secL, layerId);
-                        Log.i("VectorMapActivity", "Added vector-backed WifiDB layer for: " + layerId);
-                        bringLiveLayersToTop();
-                        return;
-                    }
-                }
-                if (loadedStyle.getSource("WifiDB_newest") != null) {
-                    if (layerId.equalsIgnoreCase("WifiDB_0to1year") || layerId.equalsIgnoreCase("WifiDB_monthly") || layerId.equalsIgnoreCase("WifiDB_weekly") || layerId.equalsIgnoreCase("WifiDB_0to1")) {
-                        String openColor = "#1aff66";
-                        String wepColor = "#ffad33";
-                        String secureColor = "#ff1a1a";
-                        float radius = 2f;
-
-                        CircleLayer openL = new CircleLayer(layerName + "_open", "WifiDB_newest");
-                        try { openL.setSourceLayer(layerId); } catch (Exception ignored) {}
-                        openL.setProperties(PropertyFactory.circleColor(Color.parseColor(openColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(1f), PropertyFactory.circleBlur(0.5f));
-                        openL.setFilter(Expression.any(
-                            Expression.eq(Expression.get("security"), Expression.literal("open")),
-                            Expression.eq(Expression.get("sectype"), Expression.literal(1)),
-                            Expression.eq(Expression.get("sectype"), Expression.literal("1"))
-                        ));
-                        addServerLayerInOrder(openL, layerId);
-
-                        CircleLayer wepL = new CircleLayer(layerName + "_wep", "WifiDB_newest");
-                        try { wepL.setSourceLayer(layerId); } catch (Exception ignored) {}
-                        wepL.setProperties(PropertyFactory.circleColor(Color.parseColor(wepColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(1f), PropertyFactory.circleBlur(0.5f));
-                        wepL.setFilter(Expression.any(
-                            Expression.eq(Expression.get("security"), Expression.literal("wep")),
-                            Expression.eq(Expression.get("sectype"), Expression.literal(2)),
-                            Expression.eq(Expression.get("sectype"), Expression.literal("2"))
-                        ));
-                        addServerLayerInOrder(wepL, layerId);
-
-                        CircleLayer secL = new CircleLayer(layerName + "_secure", "WifiDB_newest");
-                        try { secL.setSourceLayer(layerId); } catch (Exception ignored) {}
-                        secL.setProperties(PropertyFactory.circleColor(Color.parseColor(secureColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(1f), PropertyFactory.circleBlur(0.5f));
-                        secL.setFilter(Expression.any(
-                            Expression.eq(Expression.get("security"), Expression.literal("secure")),
-                            Expression.eq(Expression.get("sectype"), Expression.literal(3)),
-                            Expression.eq(Expression.get("sectype"), Expression.literal("3"))
-                        ));
-                        addServerLayerInOrder(secL, layerId);
-                        Log.i("VectorMapActivity", "Added vector-backed WifiDB_newest layer for: " + layerId);
-                        bringLiveLayersToTop();
-                        return;
-                    }
-                }
-            } catch (Exception ignored) {}
-
-            if (layerId.equalsIgnoreCase("dailys") || lower.contains("daily") || lower.contains("dailys")) {
-                geojsonUrl = base + "/api/geojson.php?func=exp_daily";
-            } else if (layerId.equalsIgnoreCase("latests") || lower.contains("latest") || lower.contains("latests")) {
-                geojsonUrl = base + "/api/geojson.php?func=exp_latest_ap";
-            } else if (lower.contains("newest")) {
-                geojsonUrl = base + "/api/geojson.php?func=exp_latest_ap";
-            } else {
-                // fallback to daily export (recent APs)
-                geojsonUrl = base + "/api/geojson.php?func=exp_daily";
-            }
-
-                Log.i("VectorMapActivity", "Adding GeoJsonSource " + srcId + " -> " + geojsonUrl);
-                GeoJsonSource gsrc = new GeoJsonSource(srcId, geojsonUrl);
-                loadedStyle.addSource(gsrc);
-                Toast.makeText(this, "Added GeoJson source: " + srcId, Toast.LENGTH_SHORT).show();
-
-                // Try fetching the GeoJSON ourselves and apply it to the created source as a fallback
-                fetchAndApplyGeoJson(srcId, geojsonUrl);
-
-                // choose colors/radius based on layerId heuristics (map to open/wep/secure)
-                String lidLower = layerId.toLowerCase(Locale.US);
-                String openColor = "#1aff66";
-                String wepColor = "#ffad33";
-                String secureColor = "#ff1a1a";
-                float radius = 2.0f;
-                if (lidLower.contains("legacy")) { openColor = "#00802b"; wepColor = "#cc7a00"; secureColor = "#b30000"; radius = 3f; }
-                else if (lidLower.contains("2to3")) { openColor = "#00b33c"; wepColor = "#e68a00"; secureColor = "#cc0000"; radius = 2.75f; }
-                else if (lidLower.contains("1to2")) { openColor = "#00e64d"; wepColor = "#ff9900"; secureColor = "#e60000"; radius = 2.5f; }
-                else if (lidLower.contains("0to1") || lidLower.contains("monthly") || lidLower.contains("weekly") || lidLower.contains("newest") || lidLower.contains("latest") || lidLower.contains("daily") ) { openColor = "#1aff66"; wepColor = "#ffad33"; secureColor = "#ff1a1a"; radius = 2f; }
-
-                // create three filtered layers for open, wep, secure
-                CircleLayer openLay = new CircleLayer(layerName + "_open", srcId);
-                openLay.setProperties(PropertyFactory.circleColor(Color.parseColor(openColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(0.9f));
-                        openLay.setFilter(Expression.any(
-                                    Expression.eq(Expression.get("security"), Expression.literal("open")),
-                                    Expression.eq(Expression.get("sectype"), Expression.literal(1)),
-                                    Expression.eq(Expression.get("sectype"), Expression.literal("1"))
-                                ));
-                addServerLayerInOrder(openLay, layerId);
-
-                CircleLayer wepLay = new CircleLayer(layerName + "_wep", srcId);
-                wepLay.setProperties(PropertyFactory.circleColor(Color.parseColor(wepColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(0.9f));
-                        wepLay.setFilter(Expression.any(
-                                    Expression.eq(Expression.get("security"), Expression.literal("wep")),
-                                    Expression.eq(Expression.get("sectype"), Expression.literal(2)),
-                                    Expression.eq(Expression.get("sectype"), Expression.literal("2"))
-                                ));
-                addServerLayerInOrder(wepLay, layerId);
-
-                CircleLayer secureLay = new CircleLayer(layerName + "_secure", srcId);
-                secureLay.setProperties(PropertyFactory.circleColor(Color.parseColor(secureColor)), PropertyFactory.circleRadius(radius), PropertyFactory.circleOpacity(0.9f));
-                        secureLay.setFilter(Expression.any(
-                                    Expression.eq(Expression.get("security"), Expression.literal("secure")),
-                                    Expression.eq(Expression.get("sectype"), Expression.literal(3)),
-                                    Expression.eq(Expression.get("sectype"), Expression.literal("3"))
-                                ));
-                addServerLayerInOrder(secureLay, layerId);
-                bringLiveLayersToTop();
         } catch (Exception ex) {
-            // ignore failures to create server layer; callers will notify
+            Log.w("VectorMapActivity", "createFreshLiveLayer failed for " + layerId + ": " + ex.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Dump the full style layer list to logcat for debugging layer ordering.
+     */
+    private void logFullStyleLayers() {
+        if (loadedStyle == null) return;
+        try {
+            List<Layer> layers = loadedStyle.getLayers();
+            if (layers == null) return;
+            StringBuilder sb = new StringBuilder();
+            sb.append("Style full layer list (count=").append(layers.size()).append("):");
+            for (Layer L : layers) {
+                try { sb.append("\n  ").append(L.getId()); } catch (Exception ignored) {}
+            }
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": " + sb.toString());
+        } catch (Exception ex) {
+            Log.w("VectorMapActivity", "logFullStyleLayers failed: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Ensure expected live circle layers exist (wifi open/wep/secure, bt, cell).
+     * Safe to call multiple times. Uses createFreshLiveLayer to avoid code duplication.
+     */
+    private void ensureLiveLayersExist() {
+        // ensure this runs on the main/UI thread because MapLibre style modifications must be made there
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            try {
+                runOnUiThread(() -> ensureLiveLayersExist());
+            } catch (Exception ex) {
+                Log.w("VectorMapActivity", LIVE_DEBUG_TOKEN + ": ensureLiveLayersExist could not post to UI thread: " + ex.getMessage());
+            }
+            return;
+        }
+        if (loadedStyle == null) return;
+        
+        String[] liveIds = new String[]{LIVE_WIFI_OPEN_LAYER_ID, LIVE_WIFI_WEP_LAYER_ID, LIVE_WIFI_SECURE_LAYER_ID, LIVE_BT_LAYER_ID, LIVE_CELL_LAYER_ID};
+        
+        try {
+            for (String layerId : liveIds) {
+                if (loadedStyle.getLayer(layerId) == null) {
+                    try {
+                        CircleLayer fresh = createFreshLiveLayer(layerId);
+                        if (fresh != null) {
+                            loadedStyle.addLayer(fresh);
+                            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": ensureLiveLayersExist: created layer " + layerId);
+                            // Verify layer was actually added
+                            if (loadedStyle.getLayer(layerId) == null) {
+                                Log.w("VectorMapActivity", LIVE_DEBUG_TOKEN + ": WARNING: layer " + layerId + " was not retained after addLayer!");
+                            }
+                        }
+                    } catch (Exception ex) { 
+                        Log.w("VectorMapActivity", LIVE_DEBUG_TOKEN + ": failed add " + layerId + ": " + ex.getMessage()); 
+                    }
+                }
+            }
+            // Note: We don't call bringLiveLayersToTop here anymore to avoid destroying layers we just created.
+            // Layers will be moved to top on next location update or explicit call.
+            try { logFullStyleLayers(); } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            Log.w("VectorMapActivity", LIVE_DEBUG_TOKEN + ": ensureLiveLayersExist failed: " + ex.getMessage());
         }
     }
 
@@ -692,31 +552,123 @@ public class VectorMapActivity extends AppCompatActivity {
      * Update the wifi live source with a GeoJSON string (FeatureCollection JSON).
      */
     public void setLiveWifiGeoJson(String featureCollectionJson) {
-        if (wifiSource == null) return;
         try {
             FeatureCollection fc = FeatureCollection.fromJson(featureCollectionJson);
-            wifiSource.setGeoJson(fc);
+            int count = fc == null || fc.features() == null ? 0 : fc.features().size();
+            Log.i("VectorMapActivity", "setLiveWifiGeoJson: features=" + count);
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": setLiveWifi features=" + count);
+            if (count > 0) {
+                try {
+                    Feature f0 = fc.features().get(0);
+                    if (f0 != null && f0.properties() != null) {
+                        Log.i("VectorMapActivity", "live wifi first props: " + f0.properties().toString());
+                    }
+                } catch (Exception ignored) {}
+            }
+            // All MapLibre style/source/layer modifications must run on the UI thread
+            if (loadedStyle != null) {
+                final int fCount = count;
+                runOnUiThread(() -> {
+                    try {
+                        if (wifiSource == null && loadedStyle.getSource("live_wifi") instanceof GeoJsonSource) {
+                            wifiSource = (GeoJsonSource) loadedStyle.getSource("live_wifi");
+                        }
+                        if (wifiSource != null) {
+                            try { wifiSource.setGeoJson(fc); } catch (Exception ex) { Log.w("VectorMapActivity", "wifiSource.setGeoJson failed: " + ex.getMessage()); }
+                        } else {
+                            try {
+                                Log.i("VectorMapActivity", "wifiSource null; creating live_wifi source");
+                                GeoJsonSource s = new GeoJsonSource("live_wifi", fc);
+                                loadedStyle.addSource(s);
+                                wifiSource = s;
+                            } catch (Exception ex) { Log.w("VectorMapActivity", "Failed to add live_wifi source: " + ex.getMessage()); }
+                        }
+                        // Ensure layers exist
+                        try { ensureLiveLayersExist(); } catch (Exception ignored) {}
+                        // make sure our live layers are visible
+                        try {
+                            String[] wifiLayerIds = {LIVE_WIFI_OPEN_LAYER_ID, LIVE_WIFI_WEP_LAYER_ID, LIVE_WIFI_SECURE_LAYER_ID};
+                            for (String layerId : wifiLayerIds) {
+                                Layer l = loadedStyle == null ? null : loadedStyle.getLayer(layerId);
+                                if (l != null) l.setProperties(PropertyFactory.visibility("visible"));
+                            }
+                        } catch (Exception ignored) {}
+                        // debug layer disabled to avoid occluding live colored circles
+                        try {
+                            if (loadedStyle != null && loadedStyle.getLayer("live_wifi_all") != null) {
+                                try { loadedStyle.getLayer("live_wifi_all").setProperties(PropertyFactory.visibility("none")); } catch (Exception ignored) {}
+                            }
+                        } catch (Exception ignored) {}
+                        // Debug helper: animate camera to first live wifi feature so user can confirm points
+                        try {
+                            if (fCount > 0 && mapLibreMap != null && fc.features() != null && !fc.features().isEmpty()) {
+                                Feature f = fc.features().get(0);
+                                if (f != null && f.geometry() instanceof Point) {
+                                    Point p = (Point) f.geometry();
+                                    double lat = p.latitude();
+                                    double lon = p.longitude();
+                                    Log.i("VectorMapActivity", "Animating camera to live wifi first feature: " + lat + "," + lon);
+                                    mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lon), 16.0));
+                                }
+                            }
+                        } catch (Exception ignored) {}
+                        try { logFullStyleLayers(); } catch (Exception ignored) {}
+                    } catch (Exception ex) { Log.w("VectorMapActivity", "UI-thread update failed in setLiveWifiGeoJson: " + ex.getMessage()); }
+                });
+            }
         } catch (Exception ex) {
-            // ignore
+            Log.i("VectorMapActivity", "Failed setLiveWifiGeoJson: " + ex.getMessage());
         }
     }
 
     public void setLiveBtGeoJson(String featureCollectionJson) {
-        if (btSource == null) return;
         try {
             FeatureCollection fc = FeatureCollection.fromJson(featureCollectionJson);
-            btSource.setGeoJson(fc);
-        } catch (Exception ex) {
-        }
+            int count = fc == null || fc.features() == null ? 0 : fc.features().size();
+            Log.i("VectorMapActivity", "setLiveBtGeoJson: features=" + count);
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": setLiveBt features=" + count);
+            if (loadedStyle != null) {
+                runOnUiThread(() -> {
+                    try {
+                        if (btSource == null && loadedStyle.getSource("live_bt") instanceof GeoJsonSource) {
+                            btSource = (GeoJsonSource) loadedStyle.getSource("live_bt");
+                        }
+                        if (btSource != null) {
+                            try { btSource.setGeoJson(fc); } catch (Exception ex) { Log.w("VectorMapActivity", "btSource.setGeoJson failed: " + ex.getMessage()); }
+                        } else {
+                            try { GeoJsonSource s = new GeoJsonSource("live_bt", fc); loadedStyle.addSource(s); btSource = s; } catch (Exception ex) { Log.w("VectorMapActivity", "Failed to add live_bt source: " + ex.getMessage()); }
+                        }
+                        try { ensureLiveLayersExist(); } catch (Exception ignored) {}
+                        try { Layer l = loadedStyle == null ? null : loadedStyle.getLayer(LIVE_BT_LAYER_ID); if (l != null) l.setProperties(PropertyFactory.visibility("visible")); } catch (Exception ignored) {}
+                    } catch (Exception ex) { Log.w("VectorMapActivity", "UI-thread update failed in setLiveBtGeoJson: " + ex.getMessage()); }
+                });
+            }
+        } catch (Exception ex) { Log.i("VectorMapActivity", "Failed setLiveBtGeoJson: " + ex.getMessage()); }
     }
 
     public void setLiveCellGeoJson(String featureCollectionJson) {
-        if (cellSource == null) return;
         try {
             FeatureCollection fc = FeatureCollection.fromJson(featureCollectionJson);
-            cellSource.setGeoJson(fc);
-        } catch (Exception ex) {
-        }
+            int count = fc == null || fc.features() == null ? 0 : fc.features().size();
+            Log.i("VectorMapActivity", "setLiveCellGeoJson: features=" + count);
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": setLiveCell features=" + count);
+            if (loadedStyle != null) {
+                runOnUiThread(() -> {
+                    try {
+                        if (cellSource == null && loadedStyle.getSource("live_cell") instanceof GeoJsonSource) {
+                            cellSource = (GeoJsonSource) loadedStyle.getSource("live_cell");
+                        }
+                        if (cellSource != null) {
+                            try { cellSource.setGeoJson(fc); } catch (Exception ex) { Log.w("VectorMapActivity", "cellSource.setGeoJson failed: " + ex.getMessage()); }
+                        } else {
+                            try { GeoJsonSource s = new GeoJsonSource("live_cell", fc); loadedStyle.addSource(s); cellSource = s; } catch (Exception ex) { Log.w("VectorMapActivity", "Failed to add live_cell source: " + ex.getMessage()); }
+                        }
+                        try { ensureLiveLayersExist(); } catch (Exception ignored) {}
+                        try { Layer l = loadedStyle == null ? null : loadedStyle.getLayer(LIVE_CELL_LAYER_ID); if (l != null) l.setProperties(PropertyFactory.visibility("visible")); } catch (Exception ignored) {}
+                    } catch (Exception ex) { Log.w("VectorMapActivity", "UI-thread update failed in setLiveCellGeoJson: " + ex.getMessage()); }
+                });
+            }
+        } catch (Exception ex) { Log.i("VectorMapActivity", "Failed setLiveCellGeoJson: " + ex.getMessage()); }
     }
 
     /**
@@ -849,17 +801,12 @@ public class VectorMapActivity extends AppCompatActivity {
                         // add an unfiltered debug layer so we can visually confirm points exist regardless of filters
                         try {
                             String dbgLayerId = srcId + "_all";
-                            if (loadedStyle.getLayer(dbgLayerId) == null) {
-                                CircleLayer dbg = new CircleLayer(dbgLayerId, srcId);
-                                dbg.setProperties(PropertyFactory.circleColor(Color.parseColor("#FF00FF")), PropertyFactory.circleRadius(6f), PropertyFactory.circleOpacity(0.95f));
-                                String logical = srcId;
-                                if (logical != null && logical.startsWith("srv_")) logical = logical.substring(4);
-                                addServerLayerInOrder(dbg, logical);
-                                Toast.makeText(VectorMapActivity.this, "Added debug layer " + dbgLayerId, Toast.LENGTH_SHORT).show();
-                                bringLiveLayersToTop();
+                            // debug layers suppressed to avoid occluding real data; if an existing debug layer is present hide it
+                            if (loadedStyle.getLayer(dbgLayerId) != null) {
+                                try { loadedStyle.getLayer(dbgLayerId).setProperties(PropertyFactory.visibility("none")); } catch (Exception ignored) {}
                             }
                         } catch (Exception ex) {
-                            Log.i("VectorMapActivity", "Failed to add debug layer: " + ex.getMessage());
+                            Log.i("VectorMapActivity", "Failed to handle debug layer: " + ex.getMessage());
                         }
                         refreshLayerButtonLabels();
                     } catch (Exception ex) {
@@ -881,6 +828,57 @@ public class VectorMapActivity extends AppCompatActivity {
 
     private final Set<String> hiddenLayers = new HashSet<>();
 
+    /**
+     * Ensure a server-backed GeoJSON source and a simple circle layer exist for the given logical layer id.
+     * This mirrors older behavior where a `srv_<layerId>` source and `srv_<layerId>_layer` layer were created on demand.
+     * It also logs progress with LIVE_DEBUG_TOKEN so the fetched/created layers are easy to find in logcat.
+     */
+    private void ensureServerGeoJsonLayer(String layerId) {
+        if (loadedStyle == null || layerId == null) return;
+        try {
+            String srcId = "srv_" + layerId;
+            String layerName = srcId + "_layer";
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": ensureServerGeoJsonLayer for " + layerId + " -> src=" + srcId + " layer=" + layerName);
+            // create source if missing
+            if (loadedStyle.getSource(srcId) == null) {
+                try {
+                    GeoJsonSource s = new GeoJsonSource(srcId, FeatureCollection.fromFeatures(new Feature[]{}));
+                    loadedStyle.addSource(s);
+                    Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": created source " + srcId);
+                } catch (Exception ex) {
+                    Log.w("VectorMapActivity", "Failed to create source " + srcId + ": " + ex.getMessage());
+                }
+            }
+            // create a simple circle layer if missing
+            if (loadedStyle.getLayer(layerName) == null) {
+                try {
+                    CircleLayer L = new CircleLayer(layerName, srcId);
+                    L.setProperties(
+                        PropertyFactory.circleColor(Color.parseColor("#FF5722")),
+                        PropertyFactory.circleRadius(8f),
+                        PropertyFactory.circleOpacity(0.9f)
+                    );
+                    // prefer to insert below our explicit live layers so live points remain on top
+                    addLayerBelowLive(L);
+                    Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": created layer " + layerName + " for source " + srcId);
+                } catch (Exception ex) {
+                    Log.w("VectorMapActivity", "Failed to create layer " + layerName + ": " + ex.getMessage());
+                }
+            }
+            // attempt to fetch GeoJSON from server for this id if this is a known pattern (e.g., WifiDB sources)
+            try {
+                String maybeUrl = null;
+                // common legacy mapping: layer ids like "dailys" or "WifiDB_weekly" map to server sources under /drawable endpoints in older code;
+                // we won't attempt complex mapping here; instead, if the layerId looks like a URL, fetch it directly.
+                if (layerId.startsWith("http://") || layerId.startsWith("https://")) maybeUrl = layerId;
+                if (maybeUrl != null) fetchAndApplyGeoJson(srcId, maybeUrl);
+            } catch (Exception ignored) {}
+        } catch (Exception ex) { Log.w("VectorMapActivity", "ensureServerGeoJsonLayer exception: " + ex.getMessage()); }
+    }
+
+    // WifiDB API base URL for GeoJSON endpoints
+    private static final String WIFIDB_API_BASE = "https://wifidb.net/api/geojson.php";
+
     // Called by buttons in the layout; each button has its target layer id set as its tag.
     public void toggleLayerClick(View view) {
         if (loadedStyle == null) {
@@ -891,13 +889,33 @@ public class VectorMapActivity extends AppCompatActivity {
         if (tag == null) return;
         String layerId = tag.toString();
         Log.i("VectorMapActivity", "toggleLayerClick invoked for: " + layerId);
-        try {
-            Layer layer = loadedStyle.getLayer(layerId);
-            Button btn = null;
-            try { btn = (Button)view; } catch (Exception ignored) {}
+        
+        Button btn = null;
+        try { btn = (Button)view; } catch (Exception ignored) {}
 
+        try {
+            // Special case: "dailys" fetches GeoJSON from WifiDB API
+            if ("dailys".equals(layerId)) {
+                handleDailyLayerToggle(btn);
+                return;
+            }
+            
+            // For vector tile sources (WifiDB_weekly, WifiDB_monthly, etc), 
+            // find all layers that reference this source and toggle them
+            if (layerId.startsWith("WifiDB_")) {
+                toggleVectorTileSource(layerId, btn);
+                return;
+            }
+            
+            // Special case for cell_networks - source-layer is "cell_networks"
+            if ("cell_networks".equals(layerId)) {
+                toggleVectorTileSource("cell_networks", btn);
+                return;
+            }
+            
+            // Fallback: try direct layer toggle
+            Layer layer = loadedStyle.getLayer(layerId);
             if (layer != null) {
-                // direct layer id toggle
                 if (hiddenLayers.contains(layerId)) {
                     layer.setProperties(PropertyFactory.visibility("visible"));
                     hiddenLayers.remove(layerId);
@@ -908,80 +926,280 @@ public class VectorMapActivity extends AppCompatActivity {
                     if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Hide","Show"));
                 }
             } else {
-                // fallback: try to find layers that reference a source with this id or whose id matches/contains this tag
-                List<Layer> allLayers = loadedStyle.getLayers();
-                Set<String> matched = new HashSet<>();
-                for (Layer L : allLayers) {
-                    try {
-                        String lid = L.getId();
-                        if (lid != null && (lid.equalsIgnoreCase(layerId) || lid.startsWith(layerId) || lid.contains(layerId))) {
-                            matched.add(lid);
-                        }
-                    } catch (Exception ignored) {}
-                }
-                if (matched.isEmpty()) {
-                    // try to create a server-backed layer (show action) and look for it
-                    try {
-                        ensureServerGeoJsonLayer(layerId);
-                        String srcId = "srv_" + layerId;
-                        String srvLayerId = srcId + "_layer";
-                        Layer srv = loadedStyle.getLayer(srvLayerId);
-                        if (srv == null) {
-                            // try to find any layer that references the source id or contains the layerId
-                            for (Layer L : loadedStyle.getLayers()) {
-                                try {
-                                    String lid = L.getId();
-                                    if (lid == null) continue;
-                                    if (lid.equalsIgnoreCase(srvLayerId) || lid.contains(srcId) || lid.contains(layerId)) {
-                                        srv = L;
-                                        break;
-                                    }
-                                } catch (Exception ignored) {}
-                            }
-                        }
-                        if (srv != null) {
-                            try { srv.setProperties(PropertyFactory.visibility("visible")); } catch (Exception ignored) {}
-                            hiddenLayers.remove(srv.getId());
-                            if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Show","Hide"));
-                            Toast.makeText(this, "Added layer: " + srv.getId(), Toast.LENGTH_SHORT).show();
-                            // refresh labels to reflect new state
-                            refreshLayerButtonLabels();
-                            return;
-                        }
-                    } catch (Exception ex) {
-                        // show a helpful message for debugging
-                        Toast.makeText(this, "Failed to add server layer for: " + layerId, Toast.LENGTH_SHORT).show();
-                    }
-                    Toast.makeText(this, "Layer not present: " + layerId, Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                // decide: if any matched layer is currently hidden, we'll show them all; otherwise hide them all
-                boolean anyHidden = false;
-                for (String mid : matched) { if (hiddenLayers.contains(mid)) { anyHidden = true; break; } }
-                for (String mid : matched) {
-                    try {
-                        Layer L = loadedStyle.getLayer(mid);
-                        if (L == null) continue;
-                        if (anyHidden) {
-                            L.setProperties(PropertyFactory.visibility("visible"));
-                            hiddenLayers.remove(mid);
-                        } else {
-                            L.setProperties(PropertyFactory.visibility("none"));
-                            hiddenLayers.add(mid);
-                        }
-                    } catch (Exception ignored) {}
-                }
-                if (btn != null) {
-                    if (anyHidden) btn.setText(btn.getText().toString().replaceFirst("Show","Hide"));
-                    else btn.setText(btn.getText().toString().replaceFirst("Hide","Show"));
-                }
-                Toast.makeText(this, "Toggled " + matched.size() + " layer(s)", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Layer not found: " + layerId, Toast.LENGTH_SHORT).show();
             }
         } catch (Exception ex) {
             Toast.makeText(this, "Unable to toggle layer: " + layerId, Toast.LENGTH_SHORT).show();
+            Log.w("VectorMapActivity", "toggleLayerClick exception: " + ex.getMessage());
         }
     }
 
+    /**
+     * Handle toggling the "dailys" layer which fetches GeoJSON from WifiDB API
+     */
+    private void handleDailyLayerToggle(Button btn) {
+        String srcId = "dailys";
+        String layerOpen = "dailys_open_layer";
+        String layerWep = "dailys_wep_layer";
+        String layerSecure = "dailys_secure_layer";
+        
+        // Check if layers exist - if so, toggle visibility
+        Layer existingOpen = loadedStyle.getLayer(layerOpen);
+        if (existingOpen != null) {
+            boolean isHidden = hiddenLayers.contains(layerOpen);
+            String newVis = isHidden ? "visible" : "none";
+            try {
+                loadedStyle.getLayer(layerOpen).setProperties(PropertyFactory.visibility(newVis));
+                loadedStyle.getLayer(layerWep).setProperties(PropertyFactory.visibility(newVis));
+                loadedStyle.getLayer(layerSecure).setProperties(PropertyFactory.visibility(newVis));
+            } catch (Exception ignored) {}
+            
+            if (isHidden) {
+                hiddenLayers.remove(layerOpen);
+                hiddenLayers.remove(layerWep);
+                hiddenLayers.remove(layerSecure);
+                if (btn != null) btn.setText("Hide Day");
+                Toast.makeText(this, "Showing daily layer", Toast.LENGTH_SHORT).show();
+            } else {
+                hiddenLayers.add(layerOpen);
+                hiddenLayers.add(layerWep);
+                hiddenLayers.add(layerSecure);
+                if (btn != null) btn.setText("Show Day");
+                Toast.makeText(this, "Hiding daily layer", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+        
+        // Create source if missing
+        if (loadedStyle.getSource(srcId) == null) {
+            try {
+                GeoJsonSource s = new GeoJsonSource(srcId, FeatureCollection.fromFeatures(new Feature[]{}));
+                loadedStyle.addSource(s);
+                Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": created source " + srcId);
+            } catch (Exception ex) {
+                Log.w("VectorMapActivity", "Failed to create source " + srcId + ": " + ex.getMessage());
+                Toast.makeText(this, "Failed to create daily source", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+        
+        // Create 3 layers - one for each security type (same pattern as live layers)
+        // Using same colors as WifiDB PHP: #00802b (open), #cc7a00 (wep), #b30000 (secure)
+        try {
+            // Open layer (sectype=1) - green
+            CircleLayer openLayer = new CircleLayer(layerOpen, srcId);
+            openLayer.setProperties(
+                PropertyFactory.circleColor(Color.parseColor("#00802b")),
+                PropertyFactory.circleRadius(4f),
+                PropertyFactory.circleOpacity(0.85f)
+            );
+            openLayer.setFilter(Expression.any(
+                Expression.eq(Expression.get("sectype"), Expression.literal(1)),
+                Expression.eq(Expression.get("sectype"), Expression.literal("1"))
+            ));
+            addLayerBelowLive(openLayer);
+            
+            // WEP layer (sectype=2) - orange
+            CircleLayer wepLayer = new CircleLayer(layerWep, srcId);
+            wepLayer.setProperties(
+                PropertyFactory.circleColor(Color.parseColor("#cc7a00")),
+                PropertyFactory.circleRadius(4f),
+                PropertyFactory.circleOpacity(0.85f)
+            );
+            wepLayer.setFilter(Expression.any(
+                Expression.eq(Expression.get("sectype"), Expression.literal(2)),
+                Expression.eq(Expression.get("sectype"), Expression.literal("2"))
+            ));
+            addLayerBelowLive(wepLayer);
+            
+            // Secure layer (sectype=3) - red
+            CircleLayer secureLayer = new CircleLayer(layerSecure, srcId);
+            secureLayer.setProperties(
+                PropertyFactory.circleColor(Color.parseColor("#b30000")),
+                PropertyFactory.circleRadius(4f),
+                PropertyFactory.circleOpacity(0.85f)
+            );
+            secureLayer.setFilter(Expression.any(
+                Expression.eq(Expression.get("sectype"), Expression.literal(3)),
+                Expression.eq(Expression.get("sectype"), Expression.literal("3"))
+            ));
+            addLayerBelowLive(secureLayer);
+            
+            Log.i("VectorMapActivity", LIVE_DEBUG_TOKEN + ": created daily layers");
+        } catch (Exception ex) {
+            Log.w("VectorMapActivity", "Failed to create daily layers: " + ex.getMessage());
+            Toast.makeText(this, "Failed to create daily layers", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Fetch GeoJSON from WifiDB API
+        String url = WIFIDB_API_BASE + "?func=exp_daily&json=1";
+        Toast.makeText(this, "Fetching daily data...", Toast.LENGTH_SHORT).show();
+        fetchAndApplyGeoJson(srcId, url);
+        if (btn != null) btn.setText("Hide Day");
+    }
+
+    /**
+     * Get the vector tile source name for a given source-layer name
+     */
+    private String getVectorSourceForLayer(String sourceLayerName) {
+        // Map source-layer names to their vector tile source
+        // Based on WifiDB style.json structure
+        switch (sourceLayerName) {
+            case "WifiDB_weekly":
+            case "WifiDB_monthly":
+            case "WifiDB_0to1year":
+                return "WifiDB_newest";
+            case "WifiDB_1to2year":
+            case "WifiDB_2to3year":
+            case "WifiDB_Legacy":
+                return "WifiDB";
+            case "cell_networks":
+            case "WifiDB_cells":
+                return "WifiDB_cells";
+            default:
+                return sourceLayerName; // fallback
+        }
+    }
+
+    /**
+     * Toggle visibility for vector tile layers - creates them if they don't exist
+     */
+    private void toggleVectorTileSource(String sourceLayerName, Button btn) {
+        try {
+            String vectorSource = getVectorSourceForLayer(sourceLayerName);
+            
+            // Check if source exists
+            if (loadedStyle.getSource(vectorSource) == null) {
+                Toast.makeText(this, "Source not found: " + vectorSource, Toast.LENGTH_SHORT).show();
+                Log.w("VectorMapActivity", "Vector source not found: " + vectorSource);
+                return;
+            }
+            
+            // For AP layers, we create 3 sub-layers (open/wep/secure) like dailys
+            // For cell layers, we create 1 layer
+            boolean isCellLayer = sourceLayerName.equals("cell_networks") || sourceLayerName.equals("WifiDB_cells");
+            String actualSourceLayer = sourceLayerName.equals("cell_networks") ? "cell_networks" : sourceLayerName;
+            
+            if (isCellLayer) {
+                String layerId = actualSourceLayer + "_layer";
+                Layer existing = loadedStyle.getLayer(layerId);
+                
+                if (existing != null) {
+                    // Toggle visibility
+                    boolean isHidden = hiddenLayers.contains(layerId);
+                    if (isHidden) {
+                        existing.setProperties(PropertyFactory.visibility("visible"));
+                        hiddenLayers.remove(layerId);
+                        if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Show", "Hide"));
+                        Toast.makeText(this, "Showing cell layer", Toast.LENGTH_SHORT).show();
+                    } else {
+                        existing.setProperties(PropertyFactory.visibility("none"));
+                        hiddenLayers.add(layerId);
+                        if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Hide", "Show"));
+                        Toast.makeText(this, "Hiding cell layer", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    // Create cell layer - purple color #885FCD
+                    CircleLayer cellLayer = new CircleLayer(layerId, vectorSource);
+                    cellLayer.setSourceLayer(actualSourceLayer);
+                    cellLayer.setProperties(
+                        PropertyFactory.circleColor(Color.parseColor("#885FCD")),
+                        PropertyFactory.circleRadius(2.25f),
+                        PropertyFactory.circleOpacity(0.5f)
+                    );
+                    addLayerBelowLive(cellLayer);
+                    if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Show", "Hide"));
+                    Toast.makeText(this, "Created cell layer", Toast.LENGTH_SHORT).show();
+                    Log.i("VectorMapActivity", "Created cell layer: " + layerId + " from source " + vectorSource);
+                }
+            } else {
+                // AP layer - create 3 sub-layers for open/wep/secure
+                String layerOpen = actualSourceLayer + "_open";
+                String layerWep = actualSourceLayer + "_wep";
+                String layerSecure = actualSourceLayer + "_secure";
+                
+                Layer existingOpen = loadedStyle.getLayer(layerOpen);
+                
+                if (existingOpen != null) {
+                    // Toggle visibility for all 3
+                    boolean isHidden = hiddenLayers.contains(layerOpen);
+                    String newVis = isHidden ? "visible" : "none";
+                    try {
+                        loadedStyle.getLayer(layerOpen).setProperties(PropertyFactory.visibility(newVis));
+                        loadedStyle.getLayer(layerWep).setProperties(PropertyFactory.visibility(newVis));
+                        loadedStyle.getLayer(layerSecure).setProperties(PropertyFactory.visibility(newVis));
+                    } catch (Exception ignored) {}
+                    
+                    if (isHidden) {
+                        hiddenLayers.remove(layerOpen);
+                        hiddenLayers.remove(layerWep);
+                        hiddenLayers.remove(layerSecure);
+                        if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Show", "Hide"));
+                        Toast.makeText(this, "Showing " + actualSourceLayer, Toast.LENGTH_SHORT).show();
+                    } else {
+                        hiddenLayers.add(layerOpen);
+                        hiddenLayers.add(layerWep);
+                        hiddenLayers.add(layerSecure);
+                        if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Hide", "Show"));
+                        Toast.makeText(this, "Hiding " + actualSourceLayer, Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    // Create 3 layers for open/wep/secure
+                    // Colors from PHP: #00802b (open), #cc7a00 (wep), #b30000 (secure)
+                    
+                    // Open layer (sectype=1)
+                    CircleLayer openLayer = new CircleLayer(layerOpen, vectorSource);
+                    openLayer.setSourceLayer(actualSourceLayer);
+                    openLayer.setProperties(
+                        PropertyFactory.circleColor(Color.parseColor("#00802b")),
+                        PropertyFactory.circleRadius(3f),
+                        PropertyFactory.circleOpacity(0.5f)
+                    );
+                    openLayer.setFilter(Expression.any(
+                        Expression.eq(Expression.get("sectype"), Expression.literal(1)),
+                        Expression.eq(Expression.get("sectype"), Expression.literal("1"))
+                    ));
+                    addLayerBelowLive(openLayer);
+                    
+                    // WEP layer (sectype=2)
+                    CircleLayer wepLayer = new CircleLayer(layerWep, vectorSource);
+                    wepLayer.setSourceLayer(actualSourceLayer);
+                    wepLayer.setProperties(
+                        PropertyFactory.circleColor(Color.parseColor("#cc7a00")),
+                        PropertyFactory.circleRadius(3f),
+                        PropertyFactory.circleOpacity(0.5f)
+                    );
+                    wepLayer.setFilter(Expression.any(
+                        Expression.eq(Expression.get("sectype"), Expression.literal(2)),
+                        Expression.eq(Expression.get("sectype"), Expression.literal("2"))
+                    ));
+                    addLayerBelowLive(wepLayer);
+                    
+                    // Secure layer (sectype=3)
+                    CircleLayer secureLayer = new CircleLayer(layerSecure, vectorSource);
+                    secureLayer.setSourceLayer(actualSourceLayer);
+                    secureLayer.setProperties(
+                        PropertyFactory.circleColor(Color.parseColor("#b30000")),
+                        PropertyFactory.circleRadius(3f),
+                        PropertyFactory.circleOpacity(0.5f)
+                    );
+                    secureLayer.setFilter(Expression.any(
+                        Expression.eq(Expression.get("sectype"), Expression.literal(3)),
+                        Expression.eq(Expression.get("sectype"), Expression.literal("3"))
+                    ));
+                    addLayerBelowLive(secureLayer);
+                    
+                    if (btn != null) btn.setText(btn.getText().toString().replaceFirst("Show", "Hide"));
+                    Toast.makeText(this, "Created " + actualSourceLayer + " layers", Toast.LENGTH_SHORT).show();
+                    Log.i("VectorMapActivity", "Created AP layers: " + layerOpen + ", " + layerWep + ", " + layerSecure + " from source " + vectorSource);
+                }
+            }
+        } catch (Exception ex) {
+            Toast.makeText(this, "Error: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+            Log.w("VectorMapActivity", "toggleVectorTileSource exception: " + ex.getMessage(), ex);
+        }
+    }
     private void attemptEnableLocationComponent() {
         if (mapLibreMap == null || loadedStyle == null) return;
 

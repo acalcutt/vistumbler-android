@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import android.util.Log; // added for debug logging
 
 /**
  * Simple helper to collect best-per-device detections and push GeoJSON updates to VectorMapActivity.
@@ -15,6 +17,9 @@ public class LiveMapUpdater {
     private static final Map<String, double[]> cellMap = new HashMap<>();
 
     private static WeakReference<VectorMapActivity> activityRef = new WeakReference<>(null);
+
+    // Unique token to search for in adb logcat for all live layer related events
+    private static final String LIVE_DEBUG_TOKEN = "WIGLE_LIVE_DBG";
 
     public static synchronized void setActiveActivity(VectorMapActivity activity) {
         activityRef = new WeakReference<>(activity);
@@ -84,11 +89,20 @@ public class LiveMapUpdater {
             if (d == null) continue;
             if (!first) sb.append(',');
             first = false;
+            // normalize security to expected values and map to numeric sectype
+            String sec = d.security == null ? "secure" : d.security.toLowerCase(Locale.US);
+            int sectype = 3;
+            if (sec.contains("open")) { sec = "open"; sectype = 1; }
+            else if (sec.contains("wep")) { sec = "wep"; sectype = 2; }
+            else { sec = "secure"; sectype = 3; }
+
             sb.append("{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[");
-            sb.append(d.lon).append(',').append(d.lat).append(" ]},\"properties\":{\"id\":\"").append(id).append("\",\"type\":\"wifi\",\"signal\":\"").append(d.signal).append("\",\"security\":\"").append(d.security).append("\"}}");
+            sb.append(d.lon).append(',').append(d.lat).append(" ]},\"properties\":{\"id\":\"").append(id).append("\",\"type\":\"wifi\",\"signal\":\"").append(d.signal).append("\",\"security\":\"").append(sec).append("\",\"sectype\":").append(sectype).append("}}");
         }
         sb.append("]}");
         final String json = sb.toString();
+        // Log a concise debug line with a searchable token
+        Log.i("LiveMapUpdater", LIVE_DEBUG_TOKEN + ": pushWifi features=" + wifiMap.size());
         act.runOnUiThread(() -> act.setLiveWifiGeoJson(json));
     }
 
@@ -109,6 +123,7 @@ public class LiveMapUpdater {
         }
         sb.append("]}");
         final String json = sb.toString();
+        Log.i("LiveMapUpdater", LIVE_DEBUG_TOKEN + ": pushBt features=" + btMap.size());
         act.runOnUiThread(() -> act.setLiveBtGeoJson(json));
     }
 
@@ -129,6 +144,7 @@ public class LiveMapUpdater {
         }
         sb.append("]}");
         final String json = sb.toString();
+        Log.i("LiveMapUpdater", LIVE_DEBUG_TOKEN + ": pushCell features=" + cellMap.size());
         act.runOnUiThread(() -> act.setLiveCellGeoJson(json));
     }
 }

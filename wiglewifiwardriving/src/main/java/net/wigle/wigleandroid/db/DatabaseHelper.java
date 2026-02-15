@@ -552,7 +552,8 @@ public final class DatabaseHelper extends Thread {
             }
             catch ( SQLiteException ex ) {
                 Logging.info("ex: " + ex, ex);
-                if ( "duplicate column name".equals( ex.toString() ) ) {
+                final String _m = ex.getMessage();
+                if ( _m != null && _m.toLowerCase().contains("duplicate column name") ) {
                     db.setVersion(1);
                 }
             }
@@ -567,7 +568,8 @@ public final class DatabaseHelper extends Thread {
             }
             catch ( SQLiteException ex ) {
                 Logging.info("ex: " + ex, ex);
-                if ( "duplicate column name".equals( ex.toString() ) ) {
+                final String _m = ex.getMessage();
+                if ( _m != null && _m.toLowerCase().contains("duplicate column name") ) {
                     db.setVersion(2);
                 }
             }
@@ -578,7 +580,8 @@ public final class DatabaseHelper extends Thread {
                 db.setVersion(3);
             } catch ( SQLiteException ex ) {
                 Logging.info("ex: " + ex, ex);
-                if ( "duplicate column name".equals( ex.toString() ) ) {
+                final String _m = ex.getMessage();
+                if ( _m != null && _m.toLowerCase().contains("duplicate column name") ) {
                     db.setVersion(3);
                 }
             }
@@ -592,7 +595,8 @@ public final class DatabaseHelper extends Thread {
                 db.setVersion(4);
             } catch ( SQLiteException ex ) {
                 Logging.info("ex: " + ex, ex);
-                if ( "duplicate column name".equals( ex.toString() ) ) {
+                final String _m = ex.getMessage();
+                if ( _m != null && _m.toLowerCase().contains("duplicate column name") ) {
                     db.setVersion(4);
                 }
             }

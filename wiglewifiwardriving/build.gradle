@@ -63,6 +63,7 @@ ext {
 def camerax_version = "1.5.2"
 
 dependencies {
+    implementation 'org.maplibre.gl:android-sdk:10.1.0'
     implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
     implementation "androidx.legacy:legacy-support-v4:1.0.0"
     implementation "androidx.legacy:legacy-support-core-utils:1.0.0"
