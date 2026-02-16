@@ -5,6 +5,7 @@ import static android.view.View.VISIBLE;
 
 import net.wigle.wigleandroid.background.ApiListener;
 import net.wigle.wigleandroid.background.BackupRunnable;
+import net.wigle.wigleandroid.LiveMapUpdater;
 import net.wigle.wigleandroid.background.GpxExportRunnable;
 import net.wigle.wigleandroid.background.MagicEightBallRunnable;
 import net.wigle.wigleandroid.background.ObservationImporter;
@@ -565,6 +566,7 @@ public final class DataFragment extends Fragment implements DialogListener {
             case DELETE_DIALOG: {
                 //blow away the DB
                 ListFragment.lameStatic.dbHelper.clearDatabase();
+                LiveMapUpdater.clearAllDevices();
                 //update markers
                 if (null != editor) {
                     editor.putLong(PreferenceKeys.PREF_DB_MARKER, 0L);

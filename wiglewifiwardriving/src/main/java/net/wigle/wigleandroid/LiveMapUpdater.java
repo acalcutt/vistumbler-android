@@ -31,6 +31,18 @@ public class LiveMapUpdater {
         activityRef = new WeakReference<>(null);
     }
 
+    /**
+     * Clear all tracked devices. Call this when the database is cleared.
+     */
+    public static synchronized void clearAllDevices() {
+        wifiMap.clear();
+        btMap.clear();
+        cellMap.clear();
+        Log.i("LiveMapUpdater", LIVE_DEBUG_TOKEN + ": clearAllDevices called");
+        // Push empty state to any active map activity
+        pushAllToActivity();
+    }
+
     private static class Dev {
         double lat;
         double lon;

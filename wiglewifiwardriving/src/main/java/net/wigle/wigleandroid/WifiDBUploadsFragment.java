@@ -122,6 +122,7 @@ public class WifiDBUploadsFragment extends Fragment {
                 if (clearAfterThisUpload) {
                     try {
                         ListFragment.lameStatic.dbHelper.clearDatabase();
+                        LiveMapUpdater.clearAllDevices();
                         final SharedPreferences prefs = getActivity().getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
                         final SharedPreferences.Editor editor = prefs.edit();
                         editor.putLong(PreferenceKeys.PREF_DB_MARKER, 0L);
@@ -186,6 +187,7 @@ public class WifiDBUploadsFragment extends Fragment {
                 if (clearAfterThisUpload) {
                     try {
                         ListFragment.lameStatic.dbHelper.clearDatabase();
+                        LiveMapUpdater.clearAllDevices();
                         final SharedPreferences prefs = getActivity().getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
                         final SharedPreferences.Editor editor = prefs.edit();
                         editor.putLong(PreferenceKeys.PREF_DB_MARKER, 0L);

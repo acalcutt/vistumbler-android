@@ -682,6 +682,7 @@ public class WiGLEApiManager {
                                 if (clearAfter) {
                                     if (ListFragment.lameStatic != null && ListFragment.lameStatic.dbHelper != null) {
                                         ListFragment.lameStatic.dbHelper.clearDatabase();
+                                        net.wigle.wigleandroid.LiveMapUpdater.clearAllDevices();
                                         SharedPreferences.Editor editor = prefs.edit();
                                         editor.putLong(net.wigle.wigleandroid.util.PreferenceKeys.PREF_DB_MARKER, 0L);
                                         editor.apply();
