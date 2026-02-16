@@ -17,6 +17,7 @@ import androidx.fragment.app.Fragment;
 
 import net.wigle.wigleandroid.background.BackgroundGuiHandler;
 import net.wigle.wigleandroid.background.ObservationUploader;
+import net.wigle.wigleandroid.db.DBException;
 import net.wigle.wigleandroid.model.api.UploadReseponse;
 import net.wigle.wigleandroid.net.RequestCompletedListener;
 import net.wigle.wigleandroid.net.WifiDBApiManager;
@@ -125,6 +126,12 @@ public class WifiDBUploadsFragment extends Fragment {
                         final SharedPreferences.Editor editor = prefs.edit();
                         editor.putLong(PreferenceKeys.PREF_DB_MARKER, 0L);
                         editor.apply();
+                        // Update the network count so UI reflects the cleared state
+                        try {
+                            ListFragment.lameStatic.dbHelper.getNetworkCountFromDB();
+                        } catch (DBException dbe) {
+                            Logging.warn("Failed to update network count on DB clear: ", dbe);
+                        }
                         if (getActivity() != null) {
                             getActivity().runOnUiThread(() -> scheduleDetails.append("\n" + getString(R.string.upload_cleared_toast)));
                         }
@@ -183,6 +190,12 @@ public class WifiDBUploadsFragment extends Fragment {
                         final SharedPreferences.Editor editor = prefs.edit();
                         editor.putLong(PreferenceKeys.PREF_DB_MARKER, 0L);
                         editor.apply();
+                        // Update the network count so UI reflects the cleared state
+                        try {
+                            ListFragment.lameStatic.dbHelper.getNetworkCountFromDB();
+                        } catch (DBException dbe) {
+                            Logging.warn("Failed to update network count on DB clear: ", dbe);
+                        }
                         if (getActivity() != null) {
                             getActivity().runOnUiThread(() -> scheduleDetails.append("\n" + getString(R.string.upload_cleared_toast)));
                         }

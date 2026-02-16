@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import net.wigle.wigleandroid.background.ObservationUploader;
 import net.wigle.wigleandroid.background.BackgroundGuiHandler;
+import net.wigle.wigleandroid.db.DBException;
 import net.wigle.wigleandroid.db.DatabaseHelper;
 import net.wigle.wigleandroid.model.api.UploadReseponse;
 import net.wigle.wigleandroid.net.RequestCompletedListener;
@@ -112,6 +113,12 @@ public class UploadsActivity extends AppCompatActivity {
                         final SharedPreferences.Editor editor = prefs.edit();
                         editor.putLong(PreferenceKeys.PREF_DB_MARKER, 0L);
                         editor.apply();
+                        // Update the network count so UI reflects the cleared state
+                        try {
+                            ListFragment.lameStatic.dbHelper.getNetworkCountFromDB();
+                        } catch (DBException dbe) {
+                            Logging.warn("Failed to update network count on DB clear: ", dbe);
+                        }
                         runOnUiThread(() -> statusView.append("\nLocal DB cleared"));
                     } catch (Exception ex) {
                         Logging.error("Failed to clear DB after upload: ", ex);
