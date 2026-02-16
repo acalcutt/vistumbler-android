@@ -338,23 +338,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         />
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-            android:id="@+id/button_wifidb_export_full_db"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/csv_export_button" />
-        <Button
-            android:id="@+id/button_wifidb_export_run"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/csv_run_export_button" />
-    </LinearLayout>
 
     <CheckBox android:id="@+id/checkbox_wifidb_autoupload"
         android:layout_width="fill_parent"

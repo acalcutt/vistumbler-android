@@ -75,8 +75,6 @@ public final class SettingsFragment extends Fragment implements DialogListener {
     private static final int ANONYMOUS_DIALOG=113;
     private static final int DEAUTHORIZE_DIALOG=114;
     private static final int REQUEST_CODE_PICK_DIR = 115; // New request code for directory picker
-    private static final int WIFI_DB_EXPORT_DIALOG = 116;
-    private static final int WIFI_DB_RUN_EXPORT_DIALOG = 117;
 
 
     public boolean allowRefresh = false;
@@ -191,42 +189,6 @@ public final class SettingsFragment extends Fragment implements DialogListener {
             final View view = getView();
 
             switch (dialogId) {
-                case WIFI_DB_EXPORT_DIALOG: {
-                    try {
-                        final String path = FileUtility.getUploadFilePath(getContext());
-                        final String wifiDbUriString = prefs.getString(PreferenceKeys.PREF_WIFIDB_UPLOAD_FOLDER, null);
-                        final Uri wifiDbUri = wifiDbUriString != null ? Uri.parse(wifiDbUriString) : null;
-                        ObservationUploader observationUploader = new ObservationUploader(getActivity(),
-                                ListFragment.lameStatic.dbHelper, new ApiListener() {
-                            @Override
-                            public void requestComplete(JSONObject object, boolean cached) {
-                                //TODO: something with the object?
-                            }
-                        }, true, true, false, path, null, new Bundle(), wifiDbUri);
-                        observationUploader.start();
-                    } catch (IOException ex) {
-                        Logging.error("Unable to export CSV DB: ", ex);
-                    }
-                    break;
-                }
-                case WIFI_DB_RUN_EXPORT_DIALOG: {
-                    try {
-                        final String path = FileUtility.getUploadFilePath(getContext());
-                        final String wifiDbUriString = prefs.getString(PreferenceKeys.PREF_WIFIDB_UPLOAD_FOLDER, null);
-                        final Uri wifiDbUri = wifiDbUriString != null ? Uri.parse(wifiDbUriString) : null;
-                        ObservationUploader observationUploader = new ObservationUploader(getActivity(),
-                                ListFragment.lameStatic.dbHelper, new ApiListener() {
-                            @Override
-                            public void requestComplete(JSONObject object, boolean cached) {
-                                //TODO: something with the object?
-                            }
-                        }, true, false, true, path, null, new Bundle(), wifiDbUri);
-                        observationUploader.start();
-                    } catch (IOException ex) {
-                        Logging.error("Unable to export CSV run: ", ex);
-                    }
-                    break;
-                }
                 case DONATE_DIALOG: {
                     editor.putBoolean(PreferenceKeys.PREF_DONATE, true);
                     editor.apply();
@@ -703,19 +665,6 @@ public final class SettingsFragment extends Fragment implements DialogListener {
             intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             startActivityForResult(intent, REQUEST_CODE_PICK_DIR);
         });
-
-        final Button wdbExportFullDbButton = view.findViewById(R.id.button_wifidb_export_full_db);
-        wdbExportFullDbButton.setOnClickListener(v -> {
-            WiGLEConfirmationDialog.createConfirmation(getActivity(),
-                    getString(R.string.data_export_csv_db), R.id.nav_settings, WIFI_DB_EXPORT_DIALOG);
-        });
-
-        final Button wdbExportRunButton = view.findViewById(R.id.button_wifidb_export_run);
-        wdbExportRunButton.setOnClickListener(v -> {
-            WiGLEConfirmationDialog.createConfirmation(getActivity(),
-                    getString(R.string.data_export_csv), R.id.nav_settings, WIFI_DB_RUN_EXPORT_DIALOG);
-        });
-
 
         wdbAuto.setChecked(prefs.getBoolean(PreferenceKeys.PREF_WIFIDB_AUTO_UPLOAD, false));
         wdbAutoValue.setText(Integer.toString(prefs.getInt(PreferenceKeys.PREF_WIFIDB_AUTO_UPLOAD_VALUE, 60)));
