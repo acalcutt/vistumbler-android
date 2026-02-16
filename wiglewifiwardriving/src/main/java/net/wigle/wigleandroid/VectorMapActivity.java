@@ -599,19 +599,6 @@ public class VectorMapActivity extends AppCompatActivity {
                                 try { loadedStyle.getLayer("live_wifi_all").setProperties(PropertyFactory.visibility("none")); } catch (Exception ignored) {}
                             }
                         } catch (Exception ignored) {}
-                        // Debug helper: animate camera to first live wifi feature so user can confirm points
-                        try {
-                            if (fCount > 0 && mapLibreMap != null && fc.features() != null && !fc.features().isEmpty()) {
-                                Feature f = fc.features().get(0);
-                                if (f != null && f.geometry() instanceof Point) {
-                                    Point p = (Point) f.geometry();
-                                    double lat = p.latitude();
-                                    double lon = p.longitude();
-                                    Log.i("VectorMapActivity", "Animating camera to live wifi first feature: " + lat + "," + lon);
-                                    mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lon), 16.0));
-                                }
-                            }
-                        } catch (Exception ignored) {}
                         try { logFullStyleLayers(); } catch (Exception ignored) {}
                     } catch (Exception ex) { Log.w("VectorMapActivity", "UI-thread update failed in setLiveWifiGeoJson: " + ex.getMessage()); }
                 });
