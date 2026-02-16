@@ -66,7 +66,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -76,15 +75,6 @@ import com.github.razir.progressbutton.DrawableButton;
 import com.github.razir.progressbutton.DrawableButtonExtensionsKt;
 import com.github.razir.progressbutton.ProgressButtonHolderKt;
 
-import com.google.android.gms.maps.CameraUpdateFactory;
-import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.MapView;
-import com.google.android.gms.maps.MapsInitializer;
-import com.google.android.gms.maps.model.BitmapDescriptor;
-import com.google.android.gms.maps.model.CameraPosition;
-import com.google.android.gms.maps.model.CircleOptions;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.gson.Gson;
 
@@ -120,14 +110,11 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
     private static final int MSG_OBS_UPDATE = 1;
     private static final int MSG_OBS_DONE = 2;
 
-    private static final int DEFAULT_ZOOM = 18;
-
     private Network network;
-    private MapView mapView;
     private int observations = 0;
     private boolean isDbResult = false;
-    private final ConcurrentLinkedHashMap<LatLng, Integer> obsMap = new ConcurrentLinkedHashMap<>(512);
-    private final ConcurrentLinkedHashMap<LatLng, Observation> localObsMap = new ConcurrentLinkedHashMap<>(1024);
+    private final ConcurrentLinkedHashMap<com.google.android.gms.maps.model.LatLng, Integer> obsMap = new ConcurrentLinkedHashMap<>(512);
+    private final ConcurrentLinkedHashMap<com.google.android.gms.maps.model.LatLng, Observation> localObsMap = new ConcurrentLinkedHashMap<>(1024);
     private NumberFormat numberFormat;
 
     // used for shutting extraneous activities down on an error
@@ -279,6 +266,9 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
             tv = findViewById( R.id.na_firsttime );
             tv.setText( NetworkListUtil.getTime(network, true, getApplicationContext()) );
 
+            tv = findViewById( R.id.na_lasttime );
+            tv.setText( NetworkListUtil.getTime(network, false, getApplicationContext()) );
+
             tv = findViewById( R.id.na_chan );
             Integer chan = network.getChannel();
             if ( NetworkType.WIFI.equals(network.getType()) ) {
@@ -375,7 +365,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     tv.setText(serviceUuids.toString() );
                 }
             }
-            setupMap(network, savedInstanceState, prefs );
             // kick off the query now that we have our map
             setupButtons(network, prefs);
             if (NetworkType.BLE.equals(network.getType())) {
@@ -393,9 +382,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
     public void onDestroy() {
         Logging.info("NET: onDestroy");
         networkActivity = null;
-        if (mapView != null) {
-            mapView.onDestroy();
-        }
         super.onDestroy();
     }
 
@@ -403,44 +389,24 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
     public void onResume() {
         Logging.info("NET: onResume");
         super.onResume();
-        if (mapView != null) {
-            mapView.onResume();
-        } else {
-            final SharedPreferences prefs = getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
-            setupMap( network, null, prefs);
-        }
     }
 
     @Override
     public void onPause() {
         Logging.info("NET: onPause");
         super.onPause();
-        if (mapView != null) {
-            mapView.onPause();
-        }
     }
 
     @Override
     public void onSaveInstanceState(@NonNull final Bundle outState) {
         Logging.info("NET: onSaveInstanceState");
         super.onSaveInstanceState(outState);
-        if (mapView != null) {
-            try {
-                mapView.onSaveInstanceState(outState);
-            } catch (android.os.BadParcelableException bpe) {
-                Logging.error("Exception saving NetworkActivity instance state: ",bpe);
-                //this is really low-severity, since we can restore all state anyway
-            }
-        }
     }
 
     @Override
     public void onLowMemory() {
         Logging.info("NET: onLowMemory");
         super.onLowMemory();
-        if (mapView != null) {
-            mapView.onLowMemory();
-        }
     }
 
     @SuppressLint("HandlerLeak")
@@ -454,46 +420,10 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     tv.setText( numberFormat.format( observations ));
                 } else if ( msg.what == MSG_OBS_DONE ) {
                     tv.setText( numberFormat.format( observations ) );
-                    // ALIBI:  assumes all observations belong to one "cluster" w/ a single centroid.
-                    // we could check and perform multi-cluster here
-                    // (get arithmetic mean, std-dev, try to do sigma-based partitioning)
-                    // but that seems less likely w/ one individual's observations
-                    final LatLng estCentroid = computeBasicLocation(obsMap);
-                    final int zoomLevel = computeZoom(obsMap, estCentroid);
-                    mapView.getMapAsync(googleMap -> {
-                        int count = 0;
-                        for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
-                            final LatLng latLon = obs.getKey();
-                            final int level = obs.getValue();
-
-                            // default to initial position
-                            if (count == 0 && network.getLatLng() == null) {
-                                final CameraPosition cameraPosition = new CameraPosition.Builder()
-                                        .target(latLon).zoom(DEFAULT_ZOOM).build();
-                                googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-                            }
-
-                            BitmapDescriptor obsIcon = NetworkListUtil.getSignalBitmap(
-                                    getApplicationContext(), level);
-
-                            googleMap.addMarker(new MarkerOptions().icon(obsIcon)
-                                    .position(latLon).zIndex(level));
-                            count++;
-                        }
-                        // if we got a good centroid, display it and center on it
-                        if (estCentroid.latitude != 0d && estCentroid.longitude != 0d) {
-                            //TODO: improve zoom based on obs distances?
-                            final CameraPosition cameraPosition = new CameraPosition.Builder()
-                                    .target(estCentroid).zoom(zoomLevel).build();
-                            googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-                            googleMap.addMarker(new MarkerOptions().position(estCentroid));
-                        }
-                        Logging.info("observation count: " + count);
-                        if ( NetworkType.WIFI.equals(network.getType()) ) {
-                            View v = findViewById(R.id.survey);
-                            v.setVisibility(VISIBLE);
-                        }
-                    });
+                    if ( NetworkType.WIFI.equals(network.getType()) ) {
+                        View v = findViewById(R.id.survey);
+                        v.setVisibility(VISIBLE);
+                    }
                 }
             }
         };
@@ -507,7 +437,7 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
             @Override
             public boolean handleRow( final Cursor cursor ) {
                 observations++;
-                obsMap.put( new LatLng( cursor.getFloat(1), cursor.getFloat(2) ), cursor.getInt(0) );
+                obsMap.put( new com.google.android.gms.maps.model.LatLng( cursor.getFloat(1), cursor.getFloat(2) ), cursor.getInt(0) );
                 if ( ( observations % 10 ) == 0 ) {
                     // change things on the gui thread
                     handler.sendEmptyMessage( MSG_OBS_UPDATE );
@@ -817,92 +747,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
         };
     }
 
-    private LatLng computeBasicLocation(ConcurrentLinkedHashMap<LatLng, Integer> obsMap) {
-        double latSum = 0.0;
-        double lonSum = 0.0;
-        double weightSum = 0.0;
-        for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
-            if (null != obs.getKey()) {
-                float cleanSignal = cleanSignal((float) obs.getValue());
-                final double latV = obs.getKey().latitude;
-                final double lonV = obs.getKey().longitude;
-                if (Math.abs(latV) > 0.01d && Math.abs(lonV) > 0.01d) { // 0 GPS-coord check
-                    cleanSignal *= cleanSignal;
-                    latSum += (obs.getKey().latitude * cleanSignal);
-                    lonSum += (obs.getKey().longitude * cleanSignal);
-                    weightSum += cleanSignal;
-                }
-            }
-        }
-        double trilateratedLatitude = 0;
-        double trilateratedLongitude = 0;
-        if (weightSum > 0) {
-            trilateratedLatitude = latSum / weightSum;
-            trilateratedLongitude = lonSum / weightSum;
-        }
-        return new LatLng(trilateratedLatitude, trilateratedLongitude);
-    }
-
-    private LatLng computeObservationLocation(ConcurrentLinkedHashMap<LatLng, Observation> obsMap) {
-        double latSum = 0.0;
-        double lonSum = 0.0;
-        double weightSum = 0.0;
-        for (Map.Entry<LatLng, Observation> obs : obsMap.entrySet()) {
-            if (null != obs.getKey()) {
-                float cleanSignal = cleanSignal((float) obs.getValue().getRssi());
-                final double latV = obs.getKey().latitude;
-                final double lonV = obs.getKey().longitude;
-                if (Math.abs(latV) > 0.01d && Math.abs(lonV) > 0.01d) { // 0 GPS-coord check
-                    cleanSignal *= cleanSignal;
-                    latSum += (obs.getKey().latitude * cleanSignal);
-                    lonSum += (obs.getKey().longitude * cleanSignal);
-                    weightSum += cleanSignal;
-                }
-            }
-        }
-        double trilateratedLatitude = 0;
-        double trilateratedLongitude = 0;
-        if (weightSum > 0) {
-            trilateratedLatitude = latSum / weightSum;
-            trilateratedLongitude = lonSum / weightSum;
-        }
-        return new LatLng(trilateratedLatitude, trilateratedLongitude);
-    }
-
-    private int computeZoom(ConcurrentLinkedHashMap<LatLng, Integer> obsMap, final LatLng centroid) {
-        float maxDist = 0f;
-        for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
-            float[] res = new float[3];
-            Location.distanceBetween(centroid.latitude, centroid.longitude, obs.getKey().latitude, obs.getKey().longitude, res);
-            if(res[0] > maxDist) {
-                maxDist = res[0];
-            }
-        }
-        Logging.info("max dist: "+maxDist);
-        if (maxDist < 135) {
-            return 18;
-        } else if (maxDist < 275) {
-            return 17;
-        } else if (maxDist < 550) {
-            return 16;
-        } else if (maxDist < 1100) {
-            return 15;
-        } else if (maxDist < 2250) {
-            return 14;
-        } else if (maxDist < 4500) {
-            return 13;
-        } else if (maxDist < 9000) {
-            return 12;
-        } else if (maxDist < 18000) {
-            return 11;
-        } else if (maxDist < 36000) {
-            // ALiBI: cells can be this big.
-            return 10;
-        } else {
-            return DEFAULT_ZOOM;
-        }
-    }
-
     /**
      * optimistic signal weighting
      */
@@ -921,46 +765,11 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
         return signalMemo;
     }
 
-    private void setupMap( final Network network, final Bundle savedInstanceState, final SharedPreferences prefs ) {
-        mapView = new MapView( this );
-        try {
-            mapView.onCreate(savedInstanceState);
-            mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(), prefs, R.raw.night_style_json));
-        }
-        catch (NullPointerException ex) {
-            Logging.error("npe in mapView.onCreate: " + ex, ex);
-        }
-        MapsInitializer.initialize( this );
-
-        if ((network != null) && (network.getLatLng() != null)) {
-            mapView.getMapAsync(googleMap -> {
-                final CameraPosition cameraPosition = new CameraPosition.Builder()
-                        .target(network.getLatLng()).zoom(DEFAULT_ZOOM).build();
-                googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-
-                googleMap.addCircle(new CircleOptions()
-                        .center(network.getLatLng())
-                        .radius(5)
-                        .fillColor(Color.argb(128, 240, 240, 240))
-                        .strokeColor(Color.argb(200, 255, 32, 32))
-                        .strokeWidth(3f)
-                        .zIndex(100));
-            });
-        }
-
-        final RelativeLayout rlView = findViewById( R.id.netmap_rl );
-        rlView.addView( mapView );
-    }
-
     private void setupButtons( final Network network, final SharedPreferences prefs ) {
         final ArrayList<String> hideAddresses = addressListForPref(prefs, PreferenceKeys.PREF_EXCLUDE_DISPLAY_ADDRS);
         final ArrayList<String> blockAddresses = addressListForPref(prefs, PreferenceKeys.PREF_EXCLUDE_LOG_ADDRS);
         final ArrayList<String> alertAddresses = addressListForPref(prefs, PreferenceKeys.PREF_ALERT_ADDRS);
 
-        ImageButton back = findViewById(R.id.network_back_button);
-        if (null != back) {
-            back.setOnClickListener( v -> finish());
-        }
         if ( ! NetworkType.WIFI.equals(network.getType()) && !NetworkType.isBtType(network.getType())) {
             final View filterRowView = findViewById(R.id.filter_row);
             filterRowView.setVisibility(GONE);
@@ -1115,7 +924,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     final String[] currentList = new String[]{network.getBssid()};
                     final Set<String> registerSet = new HashSet<>(Arrays.asList(currentList));
                     state.wifiReceiver.registerWiFiScanUpdater(this, registerSet);
-                    mapView.getMapAsync(GoogleMap::clear);
                 }
                 break;
             default:
@@ -1151,22 +959,8 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
 
     @Override
     public void handleWiFiSeen(String bssid, Integer rssi, Location location) {
-        LatLng latest = new LatLng(location.getLatitude(), location.getLongitude());
+        com.google.android.gms.maps.model.LatLng latest = new com.google.android.gms.maps.model.LatLng(location.getLatitude(), location.getLongitude());
         localObsMap.put(latest, new Observation(rssi, location.getLatitude(), location.getLongitude(), location.getAltitude()));
-        final LatLng estCentroid = computeObservationLocation(localObsMap);
-        final int zoomLevel = computeZoom(obsMap, estCentroid);
-        mapView.getMapAsync(googleMap -> {
-            if (network.getLatLng() == null) {
-                final CameraPosition cameraPosition = new CameraPosition.Builder()
-                        .target(latest).zoom(zoomLevel).build();
-                googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-            }
-            BitmapDescriptor obsIcon = NetworkListUtil.getSignalBitmap(
-                    getApplicationContext(), rssi);
-            googleMap.addMarker(new MarkerOptions().icon(obsIcon)
-                    .position(latest).zIndex(rssi));
-            Logging.info("survey observation added");
-        });
     }
 
     public static class CryptoDialog extends DialogFragment {

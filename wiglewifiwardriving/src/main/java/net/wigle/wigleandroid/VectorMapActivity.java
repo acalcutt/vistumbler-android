@@ -1,6 +1,7 @@
 package net.wigle.wigleandroid;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
@@ -68,12 +69,13 @@ public class VectorMapActivity extends AppCompatActivity {
     private GeoJsonSource btSource;
     private GeoJsonSource cellSource;
     private FloatingActionButton fabLocate;
+    private FloatingActionButton fabBearing;
     private View layerButtonBar;
     private static final int REQUEST_LOCATION_PERMISSION = 1001;
-    private boolean trackingEnabled = false;
     private int currentInsetTop = 0;
     private int currentInsetBottom = 0;
     private int fabOriginalBottomMargin = 0;
+    private int fabBearingOriginalBottomMargin = 0;
     private int layerBarOriginalTopMargin = 0;
     private static final String LIVE_DEBUG_TOKEN = "WIGLE_LIVE_DBG";
     private static final String LIVE_WIFI_OPEN_LAYER_ID = "live_wifi_open_layer";
@@ -81,6 +83,14 @@ public class VectorMapActivity extends AppCompatActivity {
     private static final String LIVE_WIFI_SECURE_LAYER_ID = "live_wifi_secure_layer";
     private static final String LIVE_BT_LAYER_ID = "live_bt_layer";
     private static final String LIVE_CELL_LAYER_ID = "live_cell_layer";
+
+    // Location tracking mode: OFF (no location), SHOW (show but don't follow), TRACK (follow location)
+    private enum TrackingMode { OFF, SHOW, TRACK }
+    private TrackingMode currentTrackingMode = TrackingMode.OFF;
+
+    // Bearing mode: NORTH (always north up), COMPASS (rotate with compass), GPS (rotate with GPS bearing)
+    private enum BearingMode { NORTH, COMPASS, GPS }
+    private BearingMode currentBearingMode = BearingMode.NORTH;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,6 +103,7 @@ public class VectorMapActivity extends AppCompatActivity {
 
         mapView = findViewById(R.id.mapView);
         fabLocate = findViewById(R.id.btn_locate);
+        fabBearing = findViewById(R.id.btn_bearing);
         layerButtonBar = findViewById(R.id.layer_button_bar);
 
         // capture original top margin for layer bar so we can shift it below status bar
@@ -101,10 +112,14 @@ public class VectorMapActivity extends AppCompatActivity {
             layerBarOriginalTopMargin = ((MarginLayoutParams) lbLp).topMargin;
         }
 
-        // capture original bottom margin of FAB
+        // capture original bottom margin of FABs
         ViewGroup.LayoutParams lp = fabLocate.getLayoutParams();
         if (lp instanceof MarginLayoutParams) {
             fabOriginalBottomMargin = ((MarginLayoutParams) lp).bottomMargin;
+        }
+        ViewGroup.LayoutParams lpBearing = fabBearing.getLayoutParams();
+        if (lpBearing instanceof MarginLayoutParams) {
+            fabBearingOriginalBottomMargin = ((MarginLayoutParams) lpBearing).bottomMargin;
         }
         // adjust UI for system window insets (navigation bar / status bar)
         View root = findViewById(R.id.root_container);
@@ -135,6 +150,15 @@ public class VectorMapActivity extends AppCompatActivity {
                             fabLocate.setLayoutParams(mlp);
                         }
                     } catch (Exception ignored) {}
+                    // adjust bearing FAB margin
+                    try {
+                        ViewGroup.LayoutParams lpB = fabBearing.getLayoutParams();
+                        if (lpB instanceof MarginLayoutParams) {
+                            MarginLayoutParams mlpB = (MarginLayoutParams) lpB;
+                            mlpB.bottomMargin = fabBearingOriginalBottomMargin + currentInsetBottom;
+                            fabBearing.setLayoutParams(mlpB);
+                        }
+                    } catch (Exception ignored) {}
                     // update map padding if map is ready — post to ensure layer bar measured
                     try {
                         if (mapLibreMap != null) {
@@ -157,7 +181,13 @@ public class VectorMapActivity extends AppCompatActivity {
         fabLocate.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                toggleTracking();
+                cycleTrackingMode();
+            }
+        });
+        fabBearing.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                cycleBearingMode();
             }
         });
         mapView.getMapAsync(new OnMapReadyCallback() {
@@ -300,6 +330,17 @@ public class VectorMapActivity extends AppCompatActivity {
                             logStyleSummary();
                             // re-register with LiveMapUpdater so it will push any cached live features now that style/sources are available
                             try { LiveMapUpdater.setActiveActivity(VectorMapActivity.this); } catch (Exception ignored) {}
+
+                            // Check for a network to focus on
+                            Intent intent = getIntent();
+                            if (intent != null && intent.hasExtra("lat") && intent.hasExtra("lon")) {
+                                double lat = intent.getDoubleExtra("lat", 0);
+                                double lon = intent.getDoubleExtra("lon", 0);
+                                if (lat != 0 && lon != 0) {
+                                    mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(
+                                            new LatLng(lat, lon), 18));
+                                }
+                            }
                         }
                     });
                 } catch (Exception ex) {
@@ -1197,21 +1238,26 @@ public class VectorMapActivity extends AppCompatActivity {
 
         try {
             LocationComponent locationComponent = mapLibreMap.getLocationComponent();
-            LocationComponentActivationOptions options = LocationComponentActivationOptions.builder(this, loadedStyle)
-                    .useDefaultLocationEngine(true)
-                    .build();
-            locationComponent.activateLocationComponent(options);
-            locationComponent.setLocationComponentEnabled(true);
-            locationComponent.setCameraMode(CameraMode.TRACKING);
-            locationComponent.setRenderMode(RenderMode.COMPASS);
-
-            // center on last known location if available
-            Location last = locationComponent.getLastKnownLocation();
-            if (last != null) {
-                mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(last.getLatitude(), last.getLongitude()), 15.0));
+            if (!locationComponent.isLocationComponentActivated()) {
+                LocationComponentActivationOptions options = LocationComponentActivationOptions.builder(this, loadedStyle)
+                        .useDefaultLocationEngine(true)
+                        .build();
+                locationComponent.activateLocationComponent(options);
             }
-            trackingEnabled = true;
-            updateFabIcon();
+            locationComponent.setLocationComponentEnabled(true);
+            
+            // Apply the appropriate camera mode based on current tracking and bearing modes
+            applyCameraAndRenderMode();
+
+            // center on last known location if available and tracking
+            if (currentTrackingMode == TrackingMode.TRACK) {
+                Location last = locationComponent.getLastKnownLocation();
+                if (last != null) {
+                    mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(last.getLatitude(), last.getLongitude()), 15.0));
+                }
+            }
+            
+            updateFabIcons();
             // Ensure location layer renders above server layers; re-assert a few times
             try { bringLiveLayersToTop(); } catch (Exception ignored) {}
             if (mapView != null) {
@@ -1223,34 +1269,211 @@ public class VectorMapActivity extends AppCompatActivity {
         }
     }
 
-    private void toggleTracking() {
+    /**
+     * Compute and apply the appropriate CameraMode and RenderMode based on current tracking and bearing modes.
+     * 
+     * CameraMode options:
+     * - NONE (8): No camera tracking
+     * - NONE_COMPASS (16): No tracking, but tracks compass bearing
+     * - NONE_GPS (22): No tracking, but tracks GPS bearing
+     * - TRACKING (24): Camera tracks location
+     * - TRACKING_COMPASS (32): Tracks location with compass bearing
+     * - TRACKING_GPS (34): Tracks location with GPS bearing
+     * - TRACKING_GPS_NORTH (36): Tracks location, bearing always north
+     */
+    private void applyCameraAndRenderMode() {
         if (mapLibreMap == null) return;
         LocationComponent lc = mapLibreMap.getLocationComponent();
+        if (lc == null) return;
+
+        int cameraMode;
+        int renderMode;
+
+        switch (currentTrackingMode) {
+            case TRACK:
+                // Camera follows location
+                switch (currentBearingMode) {
+                    case COMPASS:
+                        cameraMode = CameraMode.TRACKING_COMPASS;
+                        renderMode = RenderMode.COMPASS;
+                        break;
+                    case GPS:
+                        cameraMode = CameraMode.TRACKING_GPS;
+                        renderMode = RenderMode.GPS;
+                        break;
+                    case NORTH:
+                    default:
+                        cameraMode = CameraMode.TRACKING_GPS_NORTH;
+                        renderMode = RenderMode.COMPASS;
+                        break;
+                }
+                break;
+            case SHOW:
+                // Location shown but camera doesn't follow
+                switch (currentBearingMode) {
+                    case COMPASS:
+                        cameraMode = CameraMode.NONE_COMPASS;
+                        renderMode = RenderMode.COMPASS;
+                        break;
+                    case GPS:
+                        cameraMode = CameraMode.NONE_GPS;
+                        renderMode = RenderMode.GPS;
+                        break;
+                    case NORTH:
+                    default:
+                        cameraMode = CameraMode.NONE;
+                        renderMode = RenderMode.COMPASS;
+                        break;
+                }
+                break;
+            case OFF:
+            default:
+                cameraMode = CameraMode.NONE;
+                renderMode = RenderMode.NORMAL;
+                break;
+        }
+
+        try {
+            lc.setCameraMode(cameraMode);
+            lc.setRenderMode(renderMode);
+        } catch (Exception ex) {
+            Log.w("VectorMapActivity", "Failed to set camera/render mode: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Cycle through tracking modes: OFF -> SHOW -> TRACK -> OFF
+     */
+    private void cycleTrackingMode() {
+        if (mapLibreMap == null) return;
+        LocationComponent lc = mapLibreMap.getLocationComponent();
+        
+        // If location component not enabled, enable it first and set to SHOW mode
         if (lc == null || !lc.isLocationComponentEnabled()) {
+            currentTrackingMode = TrackingMode.SHOW;
             attemptEnableLocationComponent();
+            showTrackingModeToast();
             return;
         }
 
-        if (trackingEnabled) {
-            lc.setCameraMode(CameraMode.NONE);
-            trackingEnabled = false;
-        } else {
-            lc.setCameraMode(CameraMode.TRACKING);
-            Location last = lc.getLastKnownLocation();
-            if (last != null) {
-                mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(last.getLatitude(), last.getLongitude()), 16.0));
-            }
-            trackingEnabled = true;
+        // Cycle through modes
+        switch (currentTrackingMode) {
+            case OFF:
+                currentTrackingMode = TrackingMode.SHOW;
+                lc.setLocationComponentEnabled(true);
+                break;
+            case SHOW:
+                currentTrackingMode = TrackingMode.TRACK;
+                // Animate to current location when entering tracking mode
+                Location last = lc.getLastKnownLocation();
+                if (last != null) {
+                    mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(
+                            new LatLng(last.getLatitude(), last.getLongitude()), 16.0));
+                }
+                break;
+            case TRACK:
+                currentTrackingMode = TrackingMode.OFF;
+                lc.setLocationComponentEnabled(false);
+                break;
         }
-        updateFabIcon();
+
+        applyCameraAndRenderMode();
+        updateFabIcons();
+        showTrackingModeToast();
     }
 
-    private void updateFabIcon() {
-        if (fabLocate == null) return;
-        if (trackingEnabled) {
-            fabLocate.setImageResource(android.R.drawable.ic_menu_mylocation);
-        } else {
-            fabLocate.setImageResource(android.R.drawable.ic_menu_mylocation);
+    /**
+     * Cycle through bearing modes: NORTH -> COMPASS -> GPS -> NORTH
+     */
+    private void cycleBearingMode() {
+        switch (currentBearingMode) {
+            case NORTH:
+                currentBearingMode = BearingMode.COMPASS;
+                break;
+            case COMPASS:
+                currentBearingMode = BearingMode.GPS;
+                break;
+            case GPS:
+                currentBearingMode = BearingMode.NORTH;
+                break;
+        }
+
+        applyCameraAndRenderMode();
+        updateFabIcons();
+        showBearingModeToast();
+    }
+
+    private void showTrackingModeToast() {
+        String message;
+        switch (currentTrackingMode) {
+            case SHOW:
+                message = "Location: Show position";
+                break;
+            case TRACK:
+                message = "Location: Follow position";
+                break;
+            case OFF:
+            default:
+                message = "Location: Off";
+                break;
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private void showBearingModeToast() {
+        String message;
+        switch (currentBearingMode) {
+            case COMPASS:
+                message = "Bearing: Compass";
+                break;
+            case GPS:
+                message = "Bearing: GPS direction";
+                break;
+            case NORTH:
+            default:
+                message = "Bearing: North up";
+                break;
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private void updateFabIcons() {
+        if (fabLocate != null) {
+            // Different icons for different tracking modes
+            switch (currentTrackingMode) {
+                case TRACK:
+                    fabLocate.setImageResource(android.R.drawable.ic_menu_mylocation);
+                    fabLocate.setAlpha(1.0f);
+                    break;
+                case SHOW:
+                    fabLocate.setImageResource(android.R.drawable.ic_menu_mylocation);
+                    fabLocate.setAlpha(0.7f);
+                    break;
+                case OFF:
+                default:
+                    fabLocate.setImageResource(android.R.drawable.ic_menu_mylocation);
+                    fabLocate.setAlpha(0.4f);
+                    break;
+            }
+        }
+        
+        if (fabBearing != null) {
+            // Different appearance for different bearing modes
+            switch (currentBearingMode) {
+                case COMPASS:
+                    fabBearing.setImageResource(R.drawable.ic_compass_diamond);
+                    fabBearing.setAlpha(1.0f);
+                    break;
+                case GPS:
+                    fabBearing.setImageResource(R.drawable.ic_navigation_arrow);
+                    fabBearing.setAlpha(1.0f);
+                    break;
+                case NORTH:
+                default:
+                    fabBearing.setImageResource(R.drawable.ic_compass_diamond);
+                    fabBearing.setAlpha(0.5f);
+                    break;
+            }
         }
     }
 

@@ -33,17 +33,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
-                <ImageButton
-                    android:id="@+id/network_back_button"
-                    android:layout_width="36dp"
-                    android:layout_height="38dp"
-                    android:layout_weight="0"
-                    android:contentDescription="@string/tab_list"
-                    android:src="?attr/homeAsUpIndicator"
-                    android:gravity="start"
-                    android:background="#00000000"
-                    android:alpha="1.0"
-                    app:tint="?attr/android:textColor" />
                     <FrameLayout
                         android:layout_width="wrap_content"
                         android:layout_height="match_parent"
@@ -173,10 +162,34 @@
                         android:paddingEnd="1dp" />
                 </RelativeLayout>
                 <RelativeLayout
-                    android:id="@+id/capabilities_row"
+                    android:id="@+id/last_time_row"
                     android:layout_width="fill_parent"
                     android:layout_height="wrap_content"
                     android:layout_below="@+id/summary_row"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="1dp"
+                    android:paddingBottom="2dp">
+                <TextView
+                    android:id="@+id/na_lasttime_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="1dp"
+                    android:paddingEnd="1dp"
+                    android:text="@string/network_lastseen"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/na_lasttime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_toEndOf="@+id/na_lasttime_label"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="1dp" />
+                </RelativeLayout>
+                <RelativeLayout
+                    android:id="@+id/capabilities_row"
+                    android:layout_width="fill_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/last_time_row"
                     android:orientation="horizontal"
                     android:paddingHorizontal="1dp"
                     android:paddingBottom="2dp">

@@ -11,16 +11,10 @@
             android:contentDescription="@string/tab_list"
             />
         <item
-            android:id="@+id/nav_map"
+            android:id="@+id/nav_vector_map"
             android:icon="@drawable/map"
             android:title="@string/tab_map"
             android:contentDescription="@string/tab_map"
-            />
-        <item
-            android:id="@+id/nav_vector_map"
-            android:icon="@drawable/map"
-            android:title="@string/vector_map_name"
-            android:contentDescription="@string/vector_map_name"
             />
         <item
             android:id="@+id/nav_dash"

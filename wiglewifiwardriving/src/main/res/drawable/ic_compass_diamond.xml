@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Compass diamond shape: classic 4-pointed compass rose -->
+    <!-- North point (top) - typically red/emphasized -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,2 L14,10 L12,12 L10,10 Z" />
+    <!-- East point (right) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M22,12 L14,14 L12,12 L14,10 Z" />
+    <!-- South point (bottom) -->
+    <path
+        android:fillColor="#CCCCCC"
+        android:pathData="M12,22 L10,14 L12,12 L14,14 Z" />
+    <!-- West point (left) -->
+    <path
+        android:fillColor="#CCCCCC"
+        android:pathData="M2,12 L10,10 L12,12 L10,14 Z" />
+    <!-- Center dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,12 m-1.5,0 a1.5,1.5 0,1 1,3 0 a1.5,1.5 0,1 1,-3 0" />
+</vector>

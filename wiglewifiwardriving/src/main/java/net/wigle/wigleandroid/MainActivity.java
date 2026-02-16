@@ -887,8 +887,6 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
             return DataFragment.class;
         } else if (navId == R.id.nav_search) {
             return SearchFragment.class;
-        } else if (navId == R.id.nav_map) {
-            return MappingFragment.class;
         } else if (navId == R.id.nav_user_stats) {
             return UserStatsFragment.class;
         } else if (navId == R.id.nav_rank) {
@@ -1300,42 +1298,15 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
     }
 
     public static void addNetworkToMap(final Network network) {
-        MainActivity a = MainActivity.mainActivity;
-        if (a != null) {
-            final FragmentManager fragmentManager = a.getSupportFragmentManager();
-            if (null != getStaticState() && getStaticState().currentTab == R.id.nav_map) {
-                // Map is visible, give it the new network
-                final MappingFragment f = (MappingFragment) fragmentManager.findFragmentByTag(FRAGMENT_TAG_PREFIX + R.id.nav_map);
-                if (f != null) {
-                    f.addNetwork(network);
-                }
-            }
-        }
+        // No-op: VectorMapActivity receives live updates via LiveMapUpdater
     }
 
     public static void updateNetworkOnMap(final Network network) {
-        MainActivity a = MainActivity.mainActivity;
-        if (a != null) {
-            final FragmentManager fragmentManager = a.getSupportFragmentManager();
-            if (null != getStaticState() && getStaticState().currentTab == R.id.nav_map) {
-                // Map is visible, give it the new network
-                final MappingFragment f = (MappingFragment) fragmentManager.findFragmentByTag(FRAGMENT_TAG_PREFIX + R.id.nav_map);
-                if (f != null) {
-                    f.updateNetwork(network);
-                }
-            }
-        }
+        // No-op: VectorMapActivity receives live updates via LiveMapUpdater
     }
 
     public static void reclusterMap() {
-        final FragmentManager fragmentManager = MainActivity.mainActivity.getSupportFragmentManager();
-        if (null != getStaticState() && getStaticState().currentTab == R.id.nav_map) {
-            // Map is visible, give it the new network
-            final MappingFragment f = (MappingFragment) fragmentManager.findFragmentByTag(FRAGMENT_TAG_PREFIX + R.id.nav_map);
-            if (f != null) {
-                f.reCluster();
-            }
-        }
+        // No-op: VectorMapActivity handles its own clustering
     }
 
     public static void writeError(final Thread thread, final Throwable throwable, final Context context) {
@@ -2242,7 +2213,7 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
 
         // create a new listener to try and get around the gps stopping bug
         state.GNSSListener = new GNSSListener(this, state.dbHelper);
-        state.GNSSListener.setMapListener(MappingFragment.STATIC_LOCATION_LISTENER);
+        // Note: VectorMapActivity handles location directly via LocationComponent, not STATIC_LOCATION_LISTENER
         final SharedPreferences prefs = getSharedPreferences(PreferenceKeys.SHARED_PREFS, Context.MODE_PRIVATE);
 
         try {

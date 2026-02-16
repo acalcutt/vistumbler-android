@@ -94,6 +94,7 @@
     <string name="network_signal">Signal:</string>
     <string name="network_type">Type:</string>
     <string name="network_firstseen">First Seen:</string>
+    <string name="network_lastseen">Last Seen:</string>
     <string name="network_capa">Capabilities:</string>
     <string name="network_channel">Channel:</string>
     <string name="network_observations">Observations:</string>

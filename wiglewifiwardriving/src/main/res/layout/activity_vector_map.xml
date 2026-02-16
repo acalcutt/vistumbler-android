@@ -92,6 +92,7 @@
         </LinearLayout>
     </HorizontalScrollView>
 
+    <!-- Location tracking FAB: cycles OFF -> SHOW -> TRACK -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btn_locate"
         android:layout_width="wrap_content"
@@ -99,6 +100,18 @@
         android:layout_margin="16dp"
         android:contentDescription="@string/locate"
         android:src="@android:drawable/ic_menu_mylocation"
+        android:tint="@android:color/white"
+        android:layout_gravity="bottom|end" />
+
+    <!-- Bearing mode FAB: cycles NORTH -> COMPASS -> GPS -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btn_bearing"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="80dp"
+        android:contentDescription="Bearing mode"
+        android:src="@drawable/ic_compass_diamond"
         android:tint="@android:color/white"
         android:layout_gravity="bottom|end" />
 

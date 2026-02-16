@@ -528,21 +528,24 @@ public final class ListFragment extends Fragment implements ApiListener, DialogL
 
                 return true;
             }
-            case MENU_FILTER:
+            case MENU_FILTER: {
                 final Intent intent = new Intent(getActivity(), FilterActivity.class);
                 if (null != a) {
                     a.startActivity(intent);
                 }
                 return true;
-            case MENU_MAP:
+            }
+            case MENU_MAP: {
                 if (null != a) {
-                    NavigationView navigationView = a.findViewById(R.id.left_drawer);
-                    MenuItem mapMenuItem = navigationView.getMenu().findItem(R.id.nav_map);
-                    mapMenuItem.setCheckable(true);
-                    navigationView.setCheckedItem(R.id.nav_map);
+                    try {
+                        final Intent intent = new Intent(a, VectorMapActivity.class);
+                        a.startActivity(intent);
+                    } catch (Exception ex) {
+                        Logging.error("Unable to launch VectorMapActivity: " + ex, ex);
+                    }
                 }
-                if (main != null) main.selectFragment(R.id.nav_map);
                 return true;
+            }
             case MENU_MUTE:
                 if (null != a) {
                     prefs = a.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
@@ -720,6 +723,24 @@ public final class ListFragment extends Fragment implements ApiListener, DialogL
             } else {
                 Logging.error("Null network onItemClick - ignoring");
             }
+        });
+
+        listView.setOnItemLongClickListener((parent, view, position, id) -> {
+            final Network network = (Network) parent.getItemAtPosition(position);
+            if (network != null && activity != null) {
+                final com.google.android.gms.maps.model.LatLng networkLatLng = network.getLatLng();
+                if (networkLatLng != null) {
+                    final Intent intent = new Intent(activity, VectorMapActivity.class);
+                    intent.putExtra("lat", networkLatLng.latitude);
+                    intent.putExtra("lon", networkLatLng.longitude);
+                    activity.startActivity(intent);
+                } else {
+                    //TODO: show toast
+                }
+            } else {
+                Logging.error("Null network onItemLongClick - ignoring");
+            }
+            return true;
         });
     }
 
