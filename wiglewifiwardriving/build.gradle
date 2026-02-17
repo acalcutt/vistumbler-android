@@ -6,7 +6,7 @@ android {
     namespace "net.wigle.wigleandroid"
     compileSdk = 36
     defaultConfig {
-        applicationId "net.wigle.wigleandroid"
+        applicationId "net.vistumbler.android"
         minSdkVersion 26
         targetSdkVersion 36
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
