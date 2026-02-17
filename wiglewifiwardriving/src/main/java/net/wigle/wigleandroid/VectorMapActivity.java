@@ -233,6 +233,11 @@ public class VectorMapActivity extends ScreenChildActivity {
             @Override
             public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
                 VectorMapActivity.this.mapLibreMap = mapLibreMap;
+                
+                // Disable built-in attribution and logo - we have our own attribution button
+                mapLibreMap.getUiSettings().setAttributionEnabled(false);
+                mapLibreMap.getUiSettings().setLogoEnabled(false);
+                
                 try {
                     final String styleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
                     mapLibreMap.setStyle(styleUrl, new Style.OnStyleLoaded() {
@@ -1525,8 +1530,16 @@ public class VectorMapActivity extends ScreenChildActivity {
         // Parse attributions from the style
         if (loadedStyle != null) {
             try {
+                // Extract attribution strings from sources
+                java.util.List<String> attrStrings = new java.util.ArrayList<>();
+                for (org.maplibre.android.style.sources.Source source : loadedStyle.getSources()) {
+                    String attr = source.getAttribution();
+                    if (attr != null && !attr.isEmpty()) {
+                        attrStrings.add(attr);
+                    }
+                }
                 Set<Attribution> attributions = new AttributionParser.Options(this)
-                        .withAttributionData(loadedStyle.getSources().toArray(new org.maplibre.android.style.sources.Source[0]))
+                        .withAttributionData(attrStrings.toArray(new String[0]))
                         .build()
                         .getAttributions();
                 
