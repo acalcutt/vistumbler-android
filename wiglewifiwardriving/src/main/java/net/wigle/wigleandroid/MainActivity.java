@@ -726,6 +726,11 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
                         } catch (Exception ex) {
                             Logging.error("Unable to launch VectorMapActivity: " + ex, ex);
                         }
+                    } else if (menuItem.getItemId() == R.id.nav_about) {
+                        // show About dialog
+                        mDrawerLayout.closeDrawers();
+                        applyExitBackground(navigationView);
+                        showAboutDialog();
                     } else {
                         if (R.id.nav_site_stats != menuItem.getItemId() &&
                                 R.id.nav_user_stats != menuItem.getItemId() &&
@@ -2824,5 +2829,73 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
             }
             state.bssidMatchHeartbeat = null;
         }
+    }
+
+    private void showAboutDialog() {
+        StringBuilder message = new StringBuilder();
+        message.append("Vistumbler Android\n\n");
+        message.append("A product of Techidiots LLC\n");
+        message.append("https://techidiots.net\n\n");
+        message.append("Source Code:\n");
+        message.append("https://github.com/acalcutt/wigle-wifi-wardriving\n\n");
+        message.append("─────────────────────────\n\n");
+        message.append("Based on WiGLE WiFi Wardriving\n\n");
+        message.append("Special thanks to the WiGLE team and contributors for their hard work on the original application.\n\n");
+        message.append("WiGLE Website:\n");
+        message.append("https://wigle.net\n\n");
+        message.append("Original Source Code:\n");
+        message.append("https://github.com/wiglenet/wigle-wifi-wardriving\n\n");
+        message.append("─────────────────────────\n\n");
+        message.append("Licensed under the BSD 3-Clause License");
+
+        // Create ScrollView to allow scrolling in landscape
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        
+        // Create custom view with buttons
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        android.widget.TextView textView = new android.widget.TextView(this);
+        textView.setText(message.toString());
+        layout.addView(textView);
+
+        // Button container
+        android.widget.LinearLayout buttonLayout = new android.widget.LinearLayout(this);
+        buttonLayout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        buttonLayout.setPadding(0, padding, 0, 0);
+
+        String[] labels = {"Vistumbler.net", "WiGLE Site", "GitHub"};
+        String[] urls = {"https://vistumbler.net", "https://wigle.net", "https://github.com/acalcutt/wigle-wifi-wardriving"};
+
+        int buttonHeight = (int) (48 * getResources().getDisplayMetrics().density);
+        for (int i = 0; i < labels.length; i++) {
+            final String url = urls[i];
+            android.widget.Button button = new android.widget.Button(this);
+            button.setText(labels[i]);
+            android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, buttonHeight);
+            params.setMargins(0, (int) (4 * getResources().getDisplayMetrics().density), 0, 0);
+            button.setLayoutParams(params);
+            button.setOnClickListener(v -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                    startActivity(intent);
+                } catch (Exception ex) {
+                    Logging.error("Unable to open " + url + ": " + ex, ex);
+                }
+            });
+            buttonLayout.addView(button);
+        }
+        layout.addView(buttonLayout);
+        
+        scrollView.addView(layout);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(getString(R.string.menu_about));
+        builder.setView(scrollView);
+        builder.setPositiveButton("OK", null);
+        builder.show();
     }
 }
