@@ -10,7 +10,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.appcompat.app.AppCompatActivity;
+import net.wigle.wigleandroid.ui.ScreenChildActivity;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import android.graphics.Color;
 import org.maplibre.android.MapLibre;
@@ -19,6 +19,7 @@ import org.maplibre.android.camera.CameraUpdateFactory;
 import org.maplibre.android.geometry.LatLng;
 import org.maplibre.android.location.LocationComponent;
 import org.maplibre.android.location.LocationComponentActivationOptions;
+import org.maplibre.android.location.OnCameraTrackingChangedListener;
 import org.maplibre.android.location.modes.CameraMode;
 import org.maplibre.android.location.modes.RenderMode;
 import org.maplibre.android.maps.MapView;
@@ -47,6 +48,8 @@ import net.wigle.wigleandroid.ListFragment;
 import android.widget.Button;
 import android.view.View;
 import org.maplibre.android.style.layers.Layer;
+import org.maplibre.android.attribution.Attribution;
+import org.maplibre.android.attribution.AttributionParser;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.graphics.Insets;
@@ -61,7 +64,7 @@ import java.net.HttpURLConnection;
 import java.lang.StringBuilder;
 import android.os.Looper;
 
-public class VectorMapActivity extends AppCompatActivity {
+public class VectorMapActivity extends ScreenChildActivity {
     private MapView mapView;
     private MapLibreMap mapLibreMap;
     private Style loadedStyle;
@@ -70,12 +73,19 @@ public class VectorMapActivity extends AppCompatActivity {
     private GeoJsonSource cellSource;
     private FloatingActionButton fabLocate;
     private FloatingActionButton fabBearing;
+    private FloatingActionButton fabAttribution;
     private View layerButtonBar;
     private static final int REQUEST_LOCATION_PERMISSION = 1001;
     private int currentInsetTop = 0;
     private int currentInsetBottom = 0;
+    private int currentInsetRight = 0;
+    private int currentInsetLeft = 0;
     private int fabOriginalBottomMargin = 0;
+    private int fabOriginalRightMargin = 0;
     private int fabBearingOriginalBottomMargin = 0;
+    private int fabBearingOriginalRightMargin = 0;
+    private int fabAttributionOriginalBottomMargin = 0;
+    private int fabAttributionOriginalLeftMargin = 0;
     private int layerBarOriginalTopMargin = 0;
     private static final String LIVE_DEBUG_TOKEN = "WIGLE_LIVE_DBG";
     private static final String LIVE_WIFI_OPEN_LAYER_ID = "live_wifi_open_layer";
@@ -104,6 +114,7 @@ public class VectorMapActivity extends AppCompatActivity {
         mapView = findViewById(R.id.mapView);
         fabLocate = findViewById(R.id.btn_locate);
         fabBearing = findViewById(R.id.btn_bearing);
+        fabAttribution = findViewById(R.id.btn_attribution);
         layerButtonBar = findViewById(R.id.layer_button_bar);
 
         // capture original top margin for layer bar so we can shift it below status bar
@@ -112,14 +123,21 @@ public class VectorMapActivity extends AppCompatActivity {
             layerBarOriginalTopMargin = ((MarginLayoutParams) lbLp).topMargin;
         }
 
-        // capture original bottom margin of FABs
+        // capture original bottom and right margin of FABs
         ViewGroup.LayoutParams lp = fabLocate.getLayoutParams();
         if (lp instanceof MarginLayoutParams) {
             fabOriginalBottomMargin = ((MarginLayoutParams) lp).bottomMargin;
+            fabOriginalRightMargin = ((MarginLayoutParams) lp).rightMargin;
         }
         ViewGroup.LayoutParams lpBearing = fabBearing.getLayoutParams();
         if (lpBearing instanceof MarginLayoutParams) {
             fabBearingOriginalBottomMargin = ((MarginLayoutParams) lpBearing).bottomMargin;
+            fabBearingOriginalRightMargin = ((MarginLayoutParams) lpBearing).rightMargin;
+        }
+        ViewGroup.LayoutParams lpAttr = fabAttribution.getLayoutParams();
+        if (lpAttr instanceof MarginLayoutParams) {
+            fabAttributionOriginalBottomMargin = ((MarginLayoutParams) lpAttr).bottomMargin;
+            fabAttributionOriginalLeftMargin = ((MarginLayoutParams) lpAttr).leftMargin;
         }
         // adjust UI for system window insets (navigation bar / status bar)
         View root = findViewById(R.id.root_container);
@@ -130,6 +148,8 @@ public class VectorMapActivity extends AppCompatActivity {
                     Insets sys = insets.getInsets(WindowInsetsCompat.Type.systemBars());
                     currentInsetTop = sys.top;
                     currentInsetBottom = sys.bottom;
+                    currentInsetRight = sys.right;
+                    currentInsetLeft = sys.left;
                     // push layer button bar down from status bar by adjusting its top margin
                     try {
                         if (layerButtonBar != null) {
@@ -141,12 +161,13 @@ public class VectorMapActivity extends AppCompatActivity {
                             }
                         }
                     } catch (Exception ignored) {}
-                    // adjust FAB margin to sit above nav bar
+                    // adjust FAB margin to sit above nav bar (bottom) and away from side nav bar (right)
                     try {
                         ViewGroup.LayoutParams lp = fabLocate.getLayoutParams();
                         if (lp instanceof MarginLayoutParams) {
                             MarginLayoutParams mlp = (MarginLayoutParams) lp;
                             mlp.bottomMargin = fabOriginalBottomMargin + currentInsetBottom;
+                            mlp.rightMargin = fabOriginalRightMargin + currentInsetRight;
                             fabLocate.setLayoutParams(mlp);
                         }
                     } catch (Exception ignored) {}
@@ -156,7 +177,18 @@ public class VectorMapActivity extends AppCompatActivity {
                         if (lpB instanceof MarginLayoutParams) {
                             MarginLayoutParams mlpB = (MarginLayoutParams) lpB;
                             mlpB.bottomMargin = fabBearingOriginalBottomMargin + currentInsetBottom;
+                            mlpB.rightMargin = fabBearingOriginalRightMargin + currentInsetRight;
                             fabBearing.setLayoutParams(mlpB);
+                        }
+                    } catch (Exception ignored) {}
+                    // adjust attribution FAB margin (bottom-left corner)
+                    try {
+                        ViewGroup.LayoutParams lpA = fabAttribution.getLayoutParams();
+                        if (lpA instanceof MarginLayoutParams) {
+                            MarginLayoutParams mlpA = (MarginLayoutParams) lpA;
+                            mlpA.bottomMargin = fabAttributionOriginalBottomMargin + currentInsetBottom;
+                            mlpA.leftMargin = fabAttributionOriginalLeftMargin + currentInsetLeft;
+                            fabAttribution.setLayoutParams(mlpA);
                         }
                     } catch (Exception ignored) {}
                     // update map padding if map is ready — post to ensure layer bar measured
@@ -164,13 +196,14 @@ public class VectorMapActivity extends AppCompatActivity {
                         if (mapLibreMap != null) {
                             final int topInset = currentInsetTop;
                             final int bottomInset = currentInsetBottom;
+                            final int rightInset = currentInsetRight;
                             if (layerButtonBar != null) {
                                 layerButtonBar.post(() -> {
                                     int layerBarHeight = layerButtonBar.getHeight();
-                                    try { mapLibreMap.setPadding(0, topInset + layerBarHeight, 0, bottomInset); } catch (Exception ignored) {}
+                                    try { mapLibreMap.setPadding(0, topInset + layerBarHeight, rightInset, bottomInset); } catch (Exception ignored) {}
                                 });
                             } else {
-                                try { mapLibreMap.setPadding(0, topInset, 0, bottomInset); } catch (Exception ignored) {}
+                                try { mapLibreMap.setPadding(0, topInset, rightInset, bottomInset); } catch (Exception ignored) {}
                             }
                         }
                     } catch (Exception ignored) {}
@@ -188,6 +221,12 @@ public class VectorMapActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 cycleBearingMode();
+            }
+        });
+        fabAttribution.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showAttributionDialog();
             }
         });
         mapView.getMapAsync(new OnMapReadyCallback() {
@@ -228,8 +267,8 @@ public class VectorMapActivity extends AppCompatActivity {
                             // apply any saved insets to map padding now that style is loaded
                             try {
                                 int layerBarHeight = (layerButtonBar != null) ? layerButtonBar.getHeight() : 0;
-                                if (currentInsetTop > 0 || currentInsetBottom > 0) {
-                                    mapLibreMap.setPadding(0, currentInsetTop + layerBarHeight, 0, currentInsetBottom);
+                                if (currentInsetTop > 0 || currentInsetBottom > 0 || currentInsetRight > 0) {
+                                    mapLibreMap.setPadding(0, currentInsetTop + layerBarHeight, currentInsetRight, currentInsetBottom);
                                 }
                             } catch (Exception ignored) {}
                             // add click listener to show details for features
@@ -340,6 +379,23 @@ public class VectorMapActivity extends AppCompatActivity {
                                     mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(
                                             new LatLng(lat, lon), 18));
                                 }
+                            } else {
+                                // No specific location requested - center on user's current location
+                                try {
+                                    Location last = null;
+                                    LocationComponent lc = mapLibreMap.getLocationComponent();
+                                    if (lc != null && lc.isLocationComponentActivated()) {
+                                        last = lc.getLastKnownLocation();
+                                    }
+                                    // Fallback to app's GPS listener location if available
+                                    if (last == null && ListFragment.lameStatic.location != null) {
+                                        last = ListFragment.lameStatic.location;
+                                    }
+                                    if (last != null) {
+                                        mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(
+                                                new LatLng(last.getLatitude(), last.getLongitude()), 15));
+                                    }
+                                } catch (Exception ignored) {}
                             }
                         }
                     });
@@ -1243,6 +1299,27 @@ public class VectorMapActivity extends AppCompatActivity {
                         .useDefaultLocationEngine(true)
                         .build();
                 locationComponent.activateLocationComponent(options);
+                
+                // Add listener to detect when user gesture dismisses tracking
+                locationComponent.addOnCameraTrackingChangedListener(new OnCameraTrackingChangedListener() {
+                    @Override
+                    public void onCameraTrackingDismissed() {
+                        // User panned/scrolled the map while in tracking mode
+                        // Switch from TRACK to SHOW mode so they can easily re-enable tracking
+                        if (currentTrackingMode == TrackingMode.TRACK) {
+                            currentTrackingMode = TrackingMode.SHOW;
+                            VectorMapActivity.this.runOnUiThread(() -> {
+                                updateFabIcons();
+                                Toast.makeText(VectorMapActivity.this, "Location: Show position", Toast.LENGTH_SHORT).show();
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onCameraTrackingChanged(int currentMode) {
+                        // Optional: could log or react to mode changes
+                    }
+                });
             }
             locationComponent.setLocationComponentEnabled(true);
             
@@ -1437,6 +1514,55 @@ public class VectorMapActivity extends AppCompatActivity {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
+    private void showAttributionDialog() {
+        StringBuilder attributionText = new StringBuilder();
+        
+        // Add WifiDB attribution
+        attributionText.append("Map Data Sources:\n\n");
+        attributionText.append("• WifiDB - WiFi/Cell/Bluetooth network data\n");
+        attributionText.append("  https://wifidb.net\n\n");
+        
+        // Parse attributions from the style
+        if (loadedStyle != null) {
+            try {
+                Set<Attribution> attributions = new AttributionParser.Options(this)
+                        .withAttributionData(loadedStyle.getSources().toArray(new org.maplibre.android.style.sources.Source[0]))
+                        .build()
+                        .getAttributions();
+                
+                if (attributions != null && !attributions.isEmpty()) {
+                    for (Attribution attr : attributions) {
+                        String title = attr.getTitle();
+                        String url = attr.getUrl();
+                        if (title != null && !title.isEmpty()) {
+                            attributionText.append("• ").append(title);
+                            if (url != null && !url.isEmpty()) {
+                                attributionText.append("\n  ").append(url);
+                            }
+                            attributionText.append("\n\n");
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                Log.w("VectorMapActivity", "Failed to parse attributions: " + ex.getMessage());
+            }
+        }
+        
+        // Add MapLibre attribution
+        attributionText.append("• MapLibre GL\n");
+        attributionText.append("  https://maplibre.org\n\n");
+        
+        // Add OpenStreetMap attribution (common source for vector tiles)
+        attributionText.append("• © OpenStreetMap contributors\n");
+        attributionText.append("  https://www.openstreetmap.org/copyright\n");
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Map Attribution")
+                .setMessage(attributionText.toString())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
     private void updateFabIcons() {
         if (fabLocate != null) {
             // Different icons for different tracking modes
@@ -1458,20 +1584,24 @@ public class VectorMapActivity extends AppCompatActivity {
         }
         
         if (fabBearing != null) {
+            // When tracking is OFF, dim the bearing button since it has no effect
+            float baseAlpha = (currentTrackingMode == TrackingMode.OFF) ? 0.3f : 1.0f;
+            
             // Different appearance for different bearing modes
             switch (currentBearingMode) {
                 case COMPASS:
                     fabBearing.setImageResource(R.drawable.ic_compass_diamond);
-                    fabBearing.setAlpha(1.0f);
+                    fabBearing.setAlpha(baseAlpha);
                     break;
                 case GPS:
                     fabBearing.setImageResource(R.drawable.ic_navigation_arrow);
-                    fabBearing.setAlpha(1.0f);
+                    fabBearing.setAlpha(baseAlpha);
                     break;
                 case NORTH:
                 default:
                     fabBearing.setImageResource(R.drawable.ic_compass_diamond);
-                    fabBearing.setAlpha(0.5f);
+                    // North mode is dimmer to indicate "default/inactive rotation"
+                    fabBearing.setAlpha(baseAlpha * 0.5f);
                     break;
             }
         }

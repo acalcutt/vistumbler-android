@@ -45,6 +45,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.text.format.DateFormat;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
@@ -109,6 +113,7 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
 
     private static final int MSG_OBS_UPDATE = 1;
     private static final int MSG_OBS_DONE = 2;
+    private static final int MSG_FIRSTTIME = 3;
 
     private Network network;
     private int observations = 0;
@@ -375,6 +380,7 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 }
             }
             setupQuery();
+            setupFirstTimeQuery();
         }
     }
 
@@ -451,6 +457,50 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
             }
         }, ListFragment.lameStatic.dbHelper ));
         //ListFragment.lameStatic.dbHelper.addToQueue( request );
+    }
+
+    @SuppressLint("HandlerLeak")
+    private void setupFirstTimeQuery() {
+        // Handler to update UI on the main thread
+        final Handler handler = new Handler() {
+            @Override
+            public void handleMessage( final Message msg ) {
+                if ( msg.what == MSG_FIRSTTIME && msg.obj != null) {
+                    final TextView tv = findViewById( R.id.na_firsttime );
+                    tv.setText( (String) msg.obj );
+                }
+            }
+        };
+
+        // Query MIN(time) from location table for this bssid, excluding invalid GPS times (0)
+        final String sql = "SELECT MIN(time) FROM " + DatabaseHelper.LOCATION_TABLE + " WHERE bssid = ? AND time > 0";
+
+        PooledQueryExecutor.enqueue( new PooledQueryExecutor.Request( sql,
+                new String[]{network.getBssid()}, new PooledQueryExecutor.ResultHandler() {
+            @Override
+            public boolean handleRow( final Cursor cursor ) {
+                if (!cursor.isNull(0)) {
+                    long firstTime = cursor.getLong(0);
+                    // Format the time
+                    String formatted;
+                    if (DateFormat.is24HourFormat(getApplicationContext())) {
+                        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+                        formatted = sdf.format(new Date(firstTime));
+                    } else {
+                        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd h:mm:ss a", Locale.US);
+                        formatted = sdf.format(new Date(firstTime));
+                    }
+                    Message msg = handler.obtainMessage(MSG_FIRSTTIME, formatted);
+                    handler.sendMessage(msg);
+                }
+                return false; // only expect one result
+            }
+
+            @Override
+            public void complete() {
+                // nothing needed
+            }
+        }, ListFragment.lameStatic.dbHelper ));
     }
 
     private void setupBleInspection(Activity activity, final Network network) {

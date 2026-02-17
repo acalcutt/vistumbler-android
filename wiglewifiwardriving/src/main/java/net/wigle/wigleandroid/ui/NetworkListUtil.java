@@ -42,12 +42,13 @@ public class NetworkListUtil {
     private static final Locale l = Locale.getDefault();
     private static final  String timePattern = DateFormat.getBestDateTimePattern(l, "h:mm:ss a");
     private static final  String timePattern24 = DateFormat.getBestDateTimePattern(l, "H:mm:ss");
-    private static final String dateTimePattern = DateFormat.getBestDateTimePattern(l, "yyyy-MM-dd h:mm:ss a");
-    private static final  String dateTimePattern24 = DateFormat.getBestDateTimePattern(l, "yyyy-MM-dd H:mm:ss");
+    // Use fixed ISO-style date format (yyyy-MM-dd) for consistency across locales
+    private static final String dateTimePattern = "yyyy-MM-dd h:mm:ss a";
+    private static final  String dateTimePattern24 = "yyyy-MM-dd HH:mm:ss";
     private static  final SimpleDateFormat timeFormatter = new SimpleDateFormat(timePattern, l);
-    private static  final SimpleDateFormat dateTimeFormatter = new SimpleDateFormat(dateTimePattern, l);
+    private static  final SimpleDateFormat dateTimeFormatter = new SimpleDateFormat(dateTimePattern, Locale.US);
     private static  final SimpleDateFormat timeFormatter24 = new SimpleDateFormat(timePattern24, l);
-    private static  final SimpleDateFormat dateTimeFormatter24 = new SimpleDateFormat(dateTimePattern24, l);
+    private static  final SimpleDateFormat dateTimeFormatter24 = new SimpleDateFormat(dateTimePattern24, Locale.US);
 
     //color by signal strength
     private static final int COLOR_1 = Color.rgb(0, 255, 0);
@@ -73,10 +74,11 @@ public class NetworkListUtil {
                 //ALIBI: if this is a historical/non-live view, we don't want construction times.
                 return "";
             }
+            // Use date+time format for constructionTime as well for consistency
             if (DateFormat.is24HourFormat(context)) {
-                return timeFormatter24.format(new Date(network.getConstructionTime()));
+                return dateTimeFormatter24.format(new Date(network.getConstructionTime()));
             } else {
-                return timeFormatter.format(new Date(network.getConstructionTime()));
+                return dateTimeFormatter.format(new Date(network.getConstructionTime()));
             }
             // SOMEDAY (SDK26+: return Instant.ofEpochSecond(network.getConstructionTime()).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern(timePattern));
         }
