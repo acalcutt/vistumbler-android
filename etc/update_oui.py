@@ -134,6 +134,15 @@ UPPERCASE_WORDS = {
 # Words that should stay lowercase (unless at start)
 LOWERCASE_WORDS = {'a', 'an', 'the', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'by', 'de', 'van', 'von', 'la', 'le', 'el', 'di', 'da'}
 
+# Manual overrides for entries where IEEE data loses historical context
+# These preserve information about company acquisitions/name changes
+CUSTOM_OVERRIDES = {
+    '00001B': 'Novell (now Eagle Technology)',
+    '002029': 'TeleProcessing CSU/DSU (now owned by ADC/Kentrox)',
+    '00E016': 'Rapid-City (now a part of Bay Networks)',
+    '080077': 'TSL (now Retix)',
+}
+
 
 def title_case_word(word, is_first=False):
     """Convert a word to appropriate case."""
@@ -246,6 +255,12 @@ def main():
         print(f"  OUI-36 (9-char): {len(oui36)} entries")
     
     print(f"  Total: {len(oui_map)} entries")
+    
+    # Apply custom overrides for historical context
+    if CUSTOM_OVERRIDES:
+        for prefix, company in CUSTOM_OVERRIDES.items():
+            oui_map[prefix] = company
+        print(f"  Custom overrides: {len(CUSTOM_OVERRIDES)} entries")
     print()
     
     # Write output
