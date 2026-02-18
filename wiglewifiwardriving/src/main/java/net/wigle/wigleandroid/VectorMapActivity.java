@@ -117,6 +117,71 @@ public class VectorMapActivity extends ScreenChildActivity {
         fabAttribution = findViewById(R.id.btn_attribution);
         layerButtonBar = findViewById(R.id.layer_button_bar);
 
+        // Set up custom Toolbar as ActionBar
+        androidx.appcompat.widget.Toolbar toolbar = findViewById(R.id.vector_toolbar);
+        // Store original toolbar padding for later adjustment (must be before any use)
+        final int toolbarOriginalPaddingLeft = toolbar.getPaddingLeft();
+        final int toolbarOriginalPaddingRight = toolbar.getPaddingRight();
+        final int toolbarOriginalPaddingBottom = toolbar.getPaddingBottom();
+        setSupportActionBar(toolbar);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayShowTitleEnabled(false); // Remove "Vector Map" label
+        }
+        toolbar.setNavigationOnClickListener(v -> finish());
+        // Dynamically set navigation icon with top inset for status bar
+        // Store original minHeight and paddings
+        final int toolbarOriginalMinHeight = toolbar.getMinimumHeight();
+        final int toolbarOriginalPaddingTop = toolbar.getPaddingTop();
+
+        Runnable setNavIconInset = () -> {
+            // Always reset Toolbar minHeight and paddings
+            //toolbar.setMinimumHeight(toolbarOriginalMinHeight);
+            //toolbar.setPadding(toolbarOriginalPaddingLeft, toolbarOriginalPaddingTop, toolbarOriginalPaddingRight, toolbarOriginalPaddingBottom);
+
+            int statusBarHeight = 0;
+            int resource = getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (resource > 0) {
+                statusBarHeight = getResources().getDimensionPixelSize(resource);
+            }
+            int orientation = getResources().getConfiguration().orientation;
+            if (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                android.graphics.drawable.Drawable navDrawable = new android.graphics.drawable.InsetDrawable(
+                    androidx.core.content.ContextCompat.getDrawable(this, android.R.drawable.ic_menu_revert),
+                    0, statusBarHeight + 5, 0, 0);
+                toolbar.setNavigationIcon(navDrawable);
+            } else {
+                if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && currentInsetRight > 0) {
+                android.graphics.drawable.Drawable navDrawable = new android.graphics.drawable.InsetDrawable(
+                    androidx.core.content.ContextCompat.getDrawable(this, android.R.drawable.ic_menu_revert),
+                    0, statusBarHeight + 5, currentInsetRight, 0);
+                toolbar.setNavigationIcon(navDrawable);
+                } else {
+                android.graphics.drawable.Drawable navDrawable = new android.graphics.drawable.InsetDrawable(
+                    androidx.core.content.ContextCompat.getDrawable(this, android.R.drawable.ic_menu_revert),
+                    currentInsetLeft ,statusBarHeight + 5, 0, 0);
+                toolbar.setNavigationIcon(navDrawable);
+                }
+            }
+        };
+        toolbar.post(setNavIconInset);
+
+        // Listen for configuration changes to update the navigation icon inset and reset Toolbar height
+        final android.content.res.Configuration[] lastConfig = {getResources().getConfiguration()};
+        toolbar.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                      int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                android.content.res.Configuration newConfig = getResources().getConfiguration();
+                if (newConfig.orientation != lastConfig[0].orientation) {
+                    lastConfig[0] = newConfig;
+                    toolbar.post(setNavIconInset);
+                }
+            }
+        });
+        // Store original navigation icon top margin (default 0)
+        // Store original navigation icon top margin (default 0)
+        final int[] navIconOriginalTopMargin = {0};
+
         // capture original top margin for layer bar so we can shift it below status bar
         ViewGroup.LayoutParams lbLp = layerButtonBar != null ? layerButtonBar.getLayoutParams() : null;
         if (lbLp instanceof MarginLayoutParams) {
@@ -150,6 +215,37 @@ public class VectorMapActivity extends ScreenChildActivity {
                     currentInsetBottom = sys.bottom;
                     currentInsetRight = sys.right;
                     currentInsetLeft = sys.left;
+                    // Adjust only the navigation icon (back button) for status bar
+                    if (toolbar != null) {
+                        toolbar.post(() -> {
+                            for (int i = 0; i < toolbar.getChildCount(); i++) {
+                                View child = toolbar.getChildAt(i);
+                                // Try to find the navigation icon by content description or class name
+                                boolean isNavIcon = false;
+                                CharSequence desc = child.getContentDescription();
+                                if (desc != null && desc.toString().toLowerCase().contains("navigate")) {
+                                    isNavIcon = true;
+                                } else if (child.getClass().getName().toLowerCase().contains("navigation")) {
+                                    isNavIcon = true;
+                                }
+                                //if (isNavIcon) {
+                                //    try {
+                                //        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) child.getLayoutParams();
+                                //        // Store original margin only once
+                                //        if (navIconOriginalTopMargin[0] == 0) {
+                                //            navIconOriginalTopMargin[0] = lp.topMargin;
+                                //        }
+                                //        lp.topMargin = navIconOriginalTopMargin[0] + sys.top;
+                                //        child.setLayoutParams(lp);
+                                //    } catch (Exception e) {
+                                //        // If margin fails, fallback to padding
+                                //        int origPad = child.getPaddingTop();
+                                //        child.setPadding(child.getPaddingLeft(), origPad + sys.top, child.getPaddingRight(), child.getPaddingBottom());
+                                //    }
+                                //}
+                            }
+                        });
+                    }
                     // push layer button bar down from status bar by adjusting its top margin
                     try {
                         if (layerButtonBar != null) {
@@ -160,6 +256,19 @@ public class VectorMapActivity extends ScreenChildActivity {
                                 layerButtonBar.setLayoutParams(mlp2);
                             }
                         }
+                    } catch (Exception ignored) {}
+
+                    // Adjust decor view's left padding for ActionBar alignment in landscape
+                    try {
+                        //int orientation = getResources().getConfiguration().orientation;
+                        //View decor = getWindow().getDecorView();
+                        //if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && currentInsetRight > 0) {
+                            // Nav bar is on the right, set left padding to 0
+                        //    decor.setPadding(0, decor.getPaddingTop(), decor.getPaddingRight(), decor.getPaddingBottom());
+                        //} else {
+                        //    // Restore default left padding (if any)
+                        //    decor.setPadding(currentInsetLeft, decor.getPaddingTop(), decor.getPaddingRight(), decor.getPaddingBottom());
+                        //}
                     } catch (Exception ignored) {}
                     // adjust FAB margin to sit above nav bar (bottom) and away from side nav bar (right)
                     try {

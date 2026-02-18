@@ -1,96 +1,92 @@
 <?xml version="1.0" encoding="utf-8"?>
+
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-    
 
     <org.maplibre.android.maps.MapView
         android:id="@+id/mapView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
-    
-    <HorizontalScrollView
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/vector_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
-        android:fillViewport="true"
-        android:layout_gravity="top|start"
-        android:id="@+id/layer_button_bar">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btn_dailys"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorPrimary"
+        app:navigationIcon="@android:drawable/ic_menu_revert"
+        android:elevation="4dp">
+        <HorizontalScrollView
+            android:id="@+id/layer_button_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fillViewport="true"
+            android:scrollbars="none">
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:tag="dailys"
-                android:text="Show Day"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_weekly"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="WifiDB_weekly"
-                android:text="Show Week"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_monthly"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="WifiDB_monthly"
-                android:text="Show Month"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_0to1"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="WifiDB_0to1year"
-                android:text="Show Year"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_1to2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="WifiDB_1to2year"
-                android:text="Show 1-2 year"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_2to3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="WifiDB_2to3year"
-                android:text="Show 2-3 year"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_legacy"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="WifiDB_Legacy"
-                android:text="Show 3+ year"
-                android:onClick="toggleLayerClick" />
-
-            <Button
-                android:id="@+id/btn_cells"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:tag="cell_networks"
-                android:text="Show Cell Networks"
-                android:onClick="toggleLayerClick" />
-
-        </LinearLayout>
-    </HorizontalScrollView>
+                android:orientation="horizontal">
+                <Button
+                    android:id="@+id/btn_dailys"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="dailys"
+                    android:text="Show Day"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_weekly"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="WifiDB_weekly"
+                    android:text="Show Week"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_monthly"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="WifiDB_monthly"
+                    android:text="Show Month"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_0to1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="WifiDB_0to1year"
+                    android:text="Show Year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_1to2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="WifiDB_1to2year"
+                    android:text="Show 1-2 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_2to3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="WifiDB_2to3year"
+                    android:text="Show 2-3 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_legacy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="WifiDB_Legacy"
+                    android:text="Show 3+ year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cells"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_networks"
+                    android:text="Show Cell Networks"
+                    android:onClick="toggleLayerClick" />
+            </LinearLayout>
+        </HorizontalScrollView>
+    </com.google.android.material.appbar.MaterialToolbar>
 
     <!-- Location tracking FAB: cycles OFF -> SHOW -> TRACK -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton

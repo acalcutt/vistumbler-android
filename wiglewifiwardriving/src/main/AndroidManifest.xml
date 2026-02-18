@@ -80,6 +80,7 @@
         </activity>
         <activity
             android:name=".VectorMapActivity"
+            android:theme="@style/AppTheme"
             android:configChanges="keyboard|keyboardHidden|orientation|locale|screenSize|smallestScreenSize|screenLayout|uiMode"
             android:exported="false"
             android:label="@string/vector_map_name"
