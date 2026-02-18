@@ -37,7 +37,11 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.SQLException;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.location.Location;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
@@ -49,6 +53,24 @@ import android.text.format.DateFormat;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.OnMapReadyCallback;
+import org.maplibre.android.maps.Style;
+import org.maplibre.android.style.layers.Property;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.layers.CircleLayer;
+import org.maplibre.android.style.layers.SymbolLayer;
+import org.maplibre.android.style.sources.GeoJsonSource;
+import org.maplibre.android.style.expressions.Expression;
+import org.maplibre.geojson.Feature;
+import org.maplibre.geojson.FeatureCollection;
+import org.maplibre.geojson.Point;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
@@ -115,11 +137,15 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
     private static final int MSG_OBS_DONE = 2;
     private static final int MSG_FIRSTTIME = 3;
 
+    private static final int DEFAULT_ZOOM = 18;
+
     private Network network;
+    private MapView mapView;
+    private MapLibreMap mapLibreMap;
     private int observations = 0;
     private boolean isDbResult = false;
-    private final ConcurrentLinkedHashMap<com.google.android.gms.maps.model.LatLng, Integer> obsMap = new ConcurrentLinkedHashMap<>(512);
-    private final ConcurrentLinkedHashMap<com.google.android.gms.maps.model.LatLng, Observation> localObsMap = new ConcurrentLinkedHashMap<>(1024);
+    private final ConcurrentLinkedHashMap<LatLng, Integer> obsMap = new ConcurrentLinkedHashMap<>(512);
+    private final ConcurrentLinkedHashMap<LatLng, Observation> localObsMap = new ConcurrentLinkedHashMap<>(1024);
     private NumberFormat numberFormat;
 
     // used for shutting extraneous activities down on an error
@@ -154,50 +180,26 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
         final SharedPreferences prefs = getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
         ThemeUtil.setNavTheme(getWindow(), this, prefs);
 
-        View titleLayout = findViewById(R.id.na_network_detail_overlay);
-        if (null != titleLayout) {
-            ViewCompat.setOnApplyWindowInsetsListener(titleLayout, new OnApplyWindowInsetsListener() {
-                        @Override
-                        public @org.jspecify.annotations.NonNull WindowInsetsCompat onApplyWindowInsets(@org.jspecify.annotations.NonNull View v, @org.jspecify.annotations.NonNull WindowInsetsCompat insets) {
-                            final Insets innerPadding = insets.getInsets(
-                                    WindowInsetsCompat.Type.statusBars() |
-                                            WindowInsetsCompat.Type.displayCutout());
-                            v.setPadding(
-                                    innerPadding.left, innerPadding.top, innerPadding.right, innerPadding.bottom
-                            );
-                            return insets;
-                        }
-                    }
-            );
-        }
-
-        View bleToolsLayout = findViewById(R.id.ble_tools_row);
-        if (null != bleToolsLayout) {
-            ViewCompat.setOnApplyWindowInsetsListener(bleToolsLayout, new OnApplyWindowInsetsListener() {
-                @Override
-                public @org.jspecify.annotations.NonNull WindowInsetsCompat onApplyWindowInsets(@org.jspecify.annotations.NonNull View v, @org.jspecify.annotations.NonNull WindowInsetsCompat insets) {
-                    final Insets innerPadding = insets.getInsets(
-                            WindowInsetsCompat.Type.navigationBars());
-                    v.setPadding(
-                            innerPadding.left, innerPadding.top, innerPadding.right, innerPadding.bottom
-                    );
-                    return insets;
+        // Handle window insets for edge-to-edge display
+        View networkMain = findViewById(R.id.network_main);
+        View bottomTools = findViewById(R.id.bottom_tools_wrapper);
+        if (null != networkMain) {
+            ViewCompat.setOnApplyWindowInsetsListener(networkMain, (v, insets) -> {
+                final Insets statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | 
+                        WindowInsetsCompat.Type.displayCutout());
+                final Insets navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+                // Apply insets to root - combine nav bar left/right with status bar/cutout
+                v.setPadding(
+                        Math.max(statusBars.left, navBars.left),
+                        statusBars.top,
+                        Math.max(statusBars.right, navBars.right),
+                        0);
+                // Apply bottom insets to bottom_tools_wrapper for navigation bar
+                if (bottomTools != null) {
+                    bottomTools.setPadding(bottomTools.getPaddingLeft(), bottomTools.getPaddingTop(), 
+                            bottomTools.getPaddingRight(), navBars.bottom);
                 }
-            });
-        }
-
-        View filterToolsLayout = findViewById(R.id.filter_row);
-        if (null != filterToolsLayout) {
-            ViewCompat.setOnApplyWindowInsetsListener(filterToolsLayout, new OnApplyWindowInsetsListener() {
-                @Override
-                public @org.jspecify.annotations.NonNull WindowInsetsCompat onApplyWindowInsets(@org.jspecify.annotations.NonNull View v, @org.jspecify.annotations.NonNull WindowInsetsCompat insets) {
-                    final Insets innerPadding = insets.getInsets(
-                            WindowInsetsCompat.Type.navigationBars());
-                    v.setPadding(
-                            innerPadding.left, innerPadding.top, innerPadding.right, innerPadding.bottom
-                    );
-                    return insets;
-                }
+                return insets;
             });
         }
 
@@ -371,10 +373,12 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 }
             }
             // kick off the query now that we have our map
+            setupMap(network, savedInstanceState, prefs);
             setupButtons(network, prefs);
             if (NetworkType.BLE.equals(network.getType())) {
                 setupBleInspection(this, network);
             } else {
+                View bleToolsLayout = findViewById(R.id.ble_tools_row);
                 if (bleToolsLayout != null) {
                     bleToolsLayout.setVisibility(GONE);
                 }
@@ -388,6 +392,9 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
     public void onDestroy() {
         Logging.info("NET: onDestroy");
         networkActivity = null;
+        if (mapView != null) {
+            mapView.onDestroy();
+        }
         super.onDestroy();
     }
 
@@ -395,24 +402,40 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
     public void onResume() {
         Logging.info("NET: onResume");
         super.onResume();
+        if (mapView != null) {
+            mapView.onResume();
+        }
     }
 
     @Override
     public void onPause() {
         Logging.info("NET: onPause");
         super.onPause();
+        if (mapView != null) {
+            mapView.onPause();
+        }
     }
 
     @Override
     public void onSaveInstanceState(@NonNull final Bundle outState) {
         Logging.info("NET: onSaveInstanceState");
         super.onSaveInstanceState(outState);
+        if (mapView != null) {
+            try {
+                mapView.onSaveInstanceState(outState);
+            } catch (android.os.BadParcelableException bpe) {
+                Logging.error("Exception saving NetworkActivity instance state: ", bpe);
+            }
+        }
     }
 
     @Override
     public void onLowMemory() {
         Logging.info("NET: onLowMemory");
         super.onLowMemory();
+        if (mapView != null) {
+            mapView.onLowMemory();
+        }
     }
 
     @SuppressLint("HandlerLeak")
@@ -426,6 +449,36 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     tv.setText( numberFormat.format( observations ));
                 } else if ( msg.what == MSG_OBS_DONE ) {
                     tv.setText( numberFormat.format( observations ) );
+                    // ALIBI: assumes all observations belong to one "cluster" w/ a single centroid.
+                    final LatLng estCentroid = computeBasicLocation(obsMap);
+                    final int zoomLevel = computeZoom(obsMap, estCentroid);
+                    if (mapView != null && mapLibreMap != null) {
+                        // Add observation markers to the map
+                        int count = 0;
+                        for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
+                            final LatLng latLon = obs.getKey();
+                            final int level = obs.getValue();
+
+                            // default to initial position
+                            if (count == 0 && network.getLatLng() == null) {
+                                final CameraPosition cameraPosition = new CameraPosition.Builder()
+                                        .target(latLon).zoom(DEFAULT_ZOOM).build();
+                                mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+                            }
+
+                            // Add observation as a feature in the GeoJSON source
+                            count++;
+                        }
+                        // If we got a good centroid, center on it
+                        if (estCentroid.getLatitude() != 0d && estCentroid.getLongitude() != 0d) {
+                            final CameraPosition cameraPosition = new CameraPosition.Builder()
+                                    .target(estCentroid).zoom(zoomLevel).build();
+                            mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+                        }
+                        // Update the observation source with all points
+                        updateObservationMarkers();
+                        Logging.info("observation count: " + count);
+                    }
                     if ( NetworkType.WIFI.equals(network.getType()) ) {
                         View v = findViewById(R.id.survey);
                         v.setVisibility(VISIBLE);
@@ -443,7 +496,7 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
             @Override
             public boolean handleRow( final Cursor cursor ) {
                 observations++;
-                obsMap.put( new com.google.android.gms.maps.model.LatLng( cursor.getFloat(1), cursor.getFloat(2) ), cursor.getInt(0) );
+                obsMap.put( new LatLng( cursor.getFloat(1), cursor.getFloat(2) ), cursor.getInt(0) );
                 if ( ( observations % 10 ) == 0 ) {
                     // change things on the gui thread
                     handler.sendEmptyMessage( MSG_OBS_UPDATE );
@@ -501,6 +554,370 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 // nothing needed
             }
         }, ListFragment.lameStatic.dbHelper ));
+    }
+
+    private void setupMap(final Network network, final Bundle savedInstanceState, final SharedPreferences prefs) {
+        // Initialize MapLibre
+        MapLibre.getInstance(this);
+        
+        mapView = new MapView(this);
+        try {
+            mapView.onCreate(savedInstanceState);
+        } catch (NullPointerException ex) {
+            Logging.error("npe in mapView.onCreate: " + ex, ex);
+        }
+
+        mapView.getMapAsync(new OnMapReadyCallback() {
+            @Override
+            public void onMapReady(@NonNull MapLibreMap map) {
+                mapLibreMap = map;
+                
+                // Disable built-in attribution and logo
+                mapLibreMap.getUiSettings().setAttributionEnabled(false);
+                mapLibreMap.getUiSettings().setLogoEnabled(false);
+
+                final String styleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
+                mapLibreMap.setStyle(styleUrl, new Style.OnStyleLoaded() {
+                    @Override
+                    public void onStyleLoaded(@NonNull Style style) {
+                        // Set initial camera position if network has location
+                        if (network != null && network.getLatLng() != null) {
+                            com.google.android.gms.maps.model.LatLng gmsLatLng = network.getLatLng();
+                            LatLng latLng = new LatLng(gmsLatLng.latitude, gmsLatLng.longitude);
+                            final CameraPosition cameraPosition = new CameraPosition.Builder()
+                                    .target(latLng).zoom(DEFAULT_ZOOM).build();
+                            mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+                        }
+
+                        // Add GeoJSON source for observations
+                        try {
+                            GeoJsonSource obsSource = new GeoJsonSource("observations", 
+                                    FeatureCollection.fromFeatures(new Feature[]{}));
+                            style.addSource(obsSource);
+
+                            // Add circle layer for observation points with color based on signal strength
+                            CircleLayer obsLayer = new CircleLayer("observations_layer", "observations");
+                            obsLayer.setProperties(
+                                    PropertyFactory.circleRadius(8f),
+                                    PropertyFactory.circleColor(
+                                            Expression.interpolate(
+                                                    Expression.linear(),
+                                                    Expression.coalesce(Expression.get("signal"), Expression.literal(-100)),
+                                                    Expression.stop(-100, Expression.rgb(255, 0, 0)),     // Red
+                                                    Expression.stop(-80, Expression.rgb(255, 165, 0)),   // Orange
+                                                    Expression.stop(-60, Expression.rgb(255, 255, 0)),   // Yellow
+                                                    Expression.stop(-40, Expression.rgb(0, 255, 0))      // Green
+                                            )
+                                    ),
+                                    PropertyFactory.circleStrokeWidth(2f),
+                                    PropertyFactory.circleStrokeColor(Color.WHITE)
+                            );
+                            style.addLayer(obsLayer);
+
+                            // Add centroid marker source and layer
+                            GeoJsonSource centroidSource = new GeoJsonSource("centroid",
+                                    FeatureCollection.fromFeatures(new Feature[]{}));
+                            style.addSource(centroidSource);
+
+                            CircleLayer centroidLayer = new CircleLayer("centroid_layer", "centroid");
+                            centroidLayer.setProperties(
+                                    PropertyFactory.circleRadius(12f),
+                                    PropertyFactory.circleColor(Color.BLUE),
+                                    PropertyFactory.circleStrokeWidth(3f),
+                                    PropertyFactory.circleStrokeColor(Color.WHITE)
+                            );
+                            style.addLayer(centroidLayer);
+
+                            // Add device marker source and layer - shows the selected network location
+                            GeoJsonSource deviceSource = new GeoJsonSource("device",
+                                    FeatureCollection.fromFeatures(new Feature[]{}));
+                            style.addSource(deviceSource);
+
+                            // Create a pin marker icon for the device location with color based on network type
+                            int markerColor = getNetworkColor(network);
+                            Bitmap markerBitmap = createMarkerBitmap(markerColor);
+                            style.addImage("device-marker", markerBitmap);
+
+                            // Device marker layer using a pin icon (distinct from signal circles)
+                            SymbolLayer deviceLayer = new SymbolLayer("device_layer", "device");
+                            deviceLayer.setProperties(
+                                    PropertyFactory.iconImage("device-marker"),
+                                    PropertyFactory.iconSize(1.0f),
+                                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                                    PropertyFactory.iconAllowOverlap(true)
+                            );
+                            style.addLayer(deviceLayer);
+
+                            // Add the device marker immediately if we have location
+                            if (network != null && network.getLatLng() != null) {
+                                com.google.android.gms.maps.model.LatLng gmsLatLng = network.getLatLng();
+                                Feature deviceFeature = Feature.fromGeometry(
+                                        Point.fromLngLat(gmsLatLng.longitude, gmsLatLng.latitude));
+                                deviceSource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{deviceFeature}));
+                            }
+
+                            // Add survey source and layer for real-time site survey observations
+                            GeoJsonSource surveySource = new GeoJsonSource("survey",
+                                    FeatureCollection.fromFeatures(new Feature[]{}));
+                            style.addSource(surveySource);
+
+                            // Survey layer with signal-based coloring (same as observations)
+                            CircleLayer surveyLayer = new CircleLayer("survey_layer", "survey");
+                            surveyLayer.setProperties(
+                                    PropertyFactory.circleRadius(8f),
+                                    PropertyFactory.circleColor(
+                                            Expression.interpolate(
+                                                    Expression.linear(),
+                                                    Expression.coalesce(Expression.get("signal"), Expression.literal(-100)),
+                                                    Expression.stop(-100, Expression.rgb(255, 0, 0)),     // Red
+                                                    Expression.stop(-80, Expression.rgb(255, 165, 0)),   // Orange
+                                                    Expression.stop(-60, Expression.rgb(255, 255, 0)),   // Yellow
+                                                    Expression.stop(-40, Expression.rgb(0, 255, 0))      // Green
+                                            )
+                                    ),
+                                    PropertyFactory.circleStrokeWidth(2f),
+                                    PropertyFactory.circleStrokeColor(Color.WHITE)
+                            );
+                            style.addLayer(surveyLayer);
+                        } catch (Exception ex) {
+                            Logging.error("Failed to create observation sources/layers: " + ex.getMessage());
+                        }
+                    }
+                });
+            }
+        });
+
+        final RelativeLayout rlView = findViewById(R.id.netmap_rl);
+        if (rlView != null) {
+            rlView.addView(mapView);
+        }
+    }
+
+    /**
+     * Get the color for a network based on its type and encryption.
+     * Colors match the live map layer colors.
+     */
+    private int getNetworkColor(Network network) {
+        if (network == null) {
+            return Color.GRAY;
+        }
+
+        NetworkType type = network.getType();
+        if (type == null) {
+            return Color.GRAY;
+        }
+
+        if (NetworkType.WIFI.equals(type)) {
+            // WiFi colors based on encryption
+            int crypto = network.getCrypto();
+            switch (crypto) {
+                case Network.CRYPTO_NONE:
+                    return Color.parseColor("#4CAF50"); // Green - Open
+                case Network.CRYPTO_WEP:
+                    return Color.parseColor("#FF9800"); // Orange - WEP
+                case Network.CRYPTO_WPA:
+                case Network.CRYPTO_WPA2:
+                case Network.CRYPTO_WPA3:
+                default:
+                    return Color.parseColor("#F44336"); // Red - Secure
+            }
+        } else if (NetworkType.isBtType(type)) {
+            return Color.parseColor("#2196F3"); // Blue - Bluetooth
+        } else if (NetworkType.isCellType(type)) {
+            return Color.parseColor("#9C27B0"); // Purple - Cell
+        }
+
+        return Color.GRAY;
+    }
+
+    /**
+     * Create a marker pin bitmap for the device location.
+     * Creates a classic map pin shape with a colored fill and white border.
+     * @param color The fill color for the marker based on network type
+     */
+    private Bitmap createMarkerBitmap(int color) {
+        int width = 48;
+        int height = 64;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        // Create the pin shape
+        Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fillPaint.setColor(color);
+        fillPaint.setStyle(Paint.Style.FILL);
+
+        Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        strokePaint.setColor(Color.WHITE);
+        strokePaint.setStyle(Paint.Style.STROKE);
+        strokePaint.setStrokeWidth(3f);
+
+        // Draw a pin: circle top with pointed bottom
+        Path pinPath = new Path();
+        float centerX = width / 2f;
+        float circleRadius = width / 2f - 4;
+        float circleY = circleRadius + 2;
+
+        // Draw the main circle (top of pin)
+        canvas.drawCircle(centerX, circleY, circleRadius, fillPaint);
+        canvas.drawCircle(centerX, circleY, circleRadius, strokePaint);
+
+        // Draw the point (bottom of pin)
+        pinPath.moveTo(centerX - circleRadius * 0.6f, circleY + circleRadius * 0.7f);
+        pinPath.lineTo(centerX, height - 4);
+        pinPath.lineTo(centerX + circleRadius * 0.6f, circleY + circleRadius * 0.7f);
+        pinPath.close();
+        canvas.drawPath(pinPath, fillPaint);
+        canvas.drawPath(pinPath, strokePaint);
+
+        // Draw inner white circle
+        Paint innerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        innerPaint.setColor(Color.WHITE);
+        innerPaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(centerX, circleY, circleRadius * 0.4f, innerPaint);
+
+        return bitmap;
+    }
+
+    private void updateObservationMarkers() {
+        if (mapLibreMap == null) return;
+        Style style = mapLibreMap.getStyle();
+        if (style == null) return;
+
+        try {
+            // Build features for all observations
+            Feature[] features = new Feature[obsMap.size()];
+            int i = 0;
+            for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
+                LatLng pos = obs.getKey();
+                int signal = obs.getValue();
+                Feature f = Feature.fromGeometry(Point.fromLngLat(pos.getLongitude(), pos.getLatitude()));
+                f.addNumberProperty("signal", signal);
+                features[i++] = f;
+            }
+
+            // Update the observations source
+            GeoJsonSource obsSource = style.getSourceAs("observations");
+            if (obsSource != null) {
+                obsSource.setGeoJson(FeatureCollection.fromFeatures(features));
+            }
+
+            // Update centroid marker
+            LatLng centroid = computeBasicLocation(obsMap);
+            if (centroid.getLatitude() != 0d && centroid.getLongitude() != 0d) {
+                Feature centroidFeature = Feature.fromGeometry(
+                        Point.fromLngLat(centroid.getLongitude(), centroid.getLatitude()));
+                GeoJsonSource centroidSource = style.getSourceAs("centroid");
+                if (centroidSource != null) {
+                    centroidSource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{centroidFeature}));
+                }
+            }
+        } catch (Exception ex) {
+            Logging.error("Error updating observation markers: " + ex.getMessage());
+        }
+    }
+
+    private LatLng computeBasicLocation(ConcurrentLinkedHashMap<LatLng, Integer> obsMap) {
+        double latSum = 0.0;
+        double lonSum = 0.0;
+        double weightSum = 0.0;
+        for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
+            if (null != obs.getKey()) {
+                float cleanSignal = cleanSignal((float) obs.getValue());
+                final double latV = obs.getKey().getLatitude();
+                final double lonV = obs.getKey().getLongitude();
+                if (Math.abs(latV) > 0.01d && Math.abs(lonV) > 0.01d) { // 0 GPS-coord check
+                    cleanSignal *= cleanSignal;
+                    latSum += (obs.getKey().getLatitude() * cleanSignal);
+                    lonSum += (obs.getKey().getLongitude() * cleanSignal);
+                    weightSum += cleanSignal;
+                }
+            }
+        }
+        double trilateratedLatitude = 0;
+        double trilateratedLongitude = 0;
+        if (weightSum > 0) {
+            trilateratedLatitude = latSum / weightSum;
+            trilateratedLongitude = lonSum / weightSum;
+        }
+        return new LatLng(trilateratedLatitude, trilateratedLongitude);
+    }
+
+    private LatLng computeObservationLocation(ConcurrentLinkedHashMap<LatLng, Observation> obsMap) {
+        double latSum = 0.0;
+        double lonSum = 0.0;
+        double weightSum = 0.0;
+        for (Map.Entry<LatLng, Observation> obs : obsMap.entrySet()) {
+            if (null != obs.getKey()) {
+                float cleanSignal = cleanSignal((float) obs.getValue().getRssi());
+                final double latV = obs.getKey().getLatitude();
+                final double lonV = obs.getKey().getLongitude();
+                if (Math.abs(latV) > 0.01d && Math.abs(lonV) > 0.01d) { // 0 GPS-coord check
+                    cleanSignal *= cleanSignal;
+                    latSum += (obs.getKey().getLatitude() * cleanSignal);
+                    lonSum += (obs.getKey().getLongitude() * cleanSignal);
+                    weightSum += cleanSignal;
+                }
+            }
+        }
+        double trilateratedLatitude = 0;
+        double trilateratedLongitude = 0;
+        if (weightSum > 0) {
+            trilateratedLatitude = latSum / weightSum;
+            trilateratedLongitude = lonSum / weightSum;
+        }
+        return new LatLng(trilateratedLatitude, trilateratedLongitude);
+    }
+
+    private int computeZoom(ConcurrentLinkedHashMap<LatLng, Integer> obsMap, final LatLng centroid) {
+        float maxDist = 0f;
+        for (Map.Entry<LatLng, Integer> obs : obsMap.entrySet()) {
+            float[] res = new float[3];
+            Location.distanceBetween(centroid.getLatitude(), centroid.getLongitude(), 
+                    obs.getKey().getLatitude(), obs.getKey().getLongitude(), res);
+            if (res[0] > maxDist) {
+                maxDist = res[0];
+            }
+        }
+        Logging.info("max dist: " + maxDist);
+        if (maxDist < 135) {
+            return 18;
+        } else if (maxDist < 275) {
+            return 17;
+        } else if (maxDist < 550) {
+            return 16;
+        } else if (maxDist < 1100) {
+            return 15;
+        } else if (maxDist < 2250) {
+            return 14;
+        } else if (maxDist < 4500) {
+            return 13;
+        } else if (maxDist < 9000) {
+            return 12;
+        } else if (maxDist < 18000) {
+            return 11;
+        } else if (maxDist < 36000) {
+            return 10;
+        } else {
+            return DEFAULT_ZOOM;
+        }
+    }
+
+    /**
+     * Optimistic signal weighting
+     */
+    public static float cleanSignal(Float signal) {
+        float signalMemo = signal;
+        if (signal == 0f) {
+            return 100f;
+        } else if (signal >= -200 && signal < 0) {
+            signalMemo += 200f;
+        } else if (signal <= 0 || signal > 200) {
+            signalMemo = 100f;
+        }
+        if (signalMemo < 1f) {
+            signalMemo = 1f;
+        }
+        return signalMemo;
     }
 
     private void setupBleInspection(Activity activity, final Network network) {
@@ -797,24 +1214,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
         };
     }
 
-    /**
-     * optimistic signal weighting
-     */
-    public static float cleanSignal(Float signal) {
-        float signalMemo = signal;
-        if (signal == 0f) {
-            return 100f;
-        } else if (signal >= -200 && signal < 0) {
-            signalMemo += 200f;
-        } else if (signal <= 0 || signal > 200) {
-            signalMemo = 100f;
-        }
-        if (signalMemo < 1f) {
-            signalMemo = 1f;
-        }
-        return signalMemo;
-    }
-
     private void setupButtons( final Network network, final SharedPreferences prefs ) {
         final ArrayList<String> hideAddresses = addressListForPref(prefs, PreferenceKeys.PREF_EXCLUDE_DISPLAY_ADDRS);
         final ArrayList<String> blockAddresses = addressListForPref(prefs, PreferenceKeys.PREF_EXCLUDE_LOG_ADDRS);
@@ -906,6 +1305,27 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 endSurveyButton.setVisibility(GONE);
                 if (null != state) {
                     state.wifiReceiver.unregisterWiFiScanUpdater();
+                    // Show the hidden layers again after survey ends
+                    if (mapLibreMap != null) {
+                        Style style = mapLibreMap.getStyle();
+                        if (style != null) {
+                            // Show device marker
+                            SymbolLayer deviceLayer = style.getLayerAs("device_layer");
+                            if (deviceLayer != null) {
+                                deviceLayer.setProperties(PropertyFactory.visibility(Property.VISIBLE));
+                            }
+                            // Show observations layer
+                            CircleLayer obsLayer = style.getLayerAs("observations_layer");
+                            if (obsLayer != null) {
+                                obsLayer.setProperties(PropertyFactory.visibility(Property.VISIBLE));
+                            }
+                            // Show centroid layer
+                            CircleLayer centroidLayer = style.getLayerAs("centroid_layer");
+                            if (centroidLayer != null) {
+                                centroidLayer.setProperties(PropertyFactory.visibility(Property.VISIBLE));
+                            }
+                        }
+                    }
                     try {
                         KmlSurveyWriter kmlWriter = new KmlSurveyWriter(MainActivity.getMainActivity(), ListFragment.lameStatic.dbHelper,
                                 "KmlSurveyWriter", true, network.getBssid(), localObsMap.values());
@@ -971,6 +1391,37 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     startSurveyButton.setVisibility(GONE);
                     endSurveyButton.setVisibility(VISIBLE);
                     obsMap.clear();
+                    localObsMap.clear();
+                    // Clear the survey layer on the map and hide other layers
+                    if (mapLibreMap != null) {
+                        Style style = mapLibreMap.getStyle();
+                        if (style != null) {
+                            // Clear survey source
+                            GeoJsonSource surveySource = style.getSourceAs("survey");
+                            if (surveySource != null) {
+                                surveySource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{}));
+                            }
+                            // Clear and hide observations layer
+                            GeoJsonSource obsSource = style.getSourceAs("observations");
+                            if (obsSource != null) {
+                                obsSource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{}));
+                            }
+                            CircleLayer obsLayer = style.getLayerAs("observations_layer");
+                            if (obsLayer != null) {
+                                obsLayer.setProperties(PropertyFactory.visibility(Property.NONE));
+                            }
+                            // Hide the centroid layer
+                            CircleLayer centroidLayer = style.getLayerAs("centroid_layer");
+                            if (centroidLayer != null) {
+                                centroidLayer.setProperties(PropertyFactory.visibility(Property.NONE));
+                            }
+                            // Hide the device marker during survey
+                            SymbolLayer deviceLayer = style.getLayerAs("device_layer");
+                            if (deviceLayer != null) {
+                                deviceLayer.setProperties(PropertyFactory.visibility(Property.NONE));
+                            }
+                        }
+                    }
                     final String[] currentList = new String[]{network.getBssid()};
                     final Set<String> registerSet = new HashSet<>(Arrays.asList(currentList));
                     state.wifiReceiver.registerWiFiScanUpdater(this, registerSet);
@@ -1009,8 +1460,50 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
 
     @Override
     public void handleWiFiSeen(String bssid, Integer rssi, Location location) {
-        com.google.android.gms.maps.model.LatLng latest = new com.google.android.gms.maps.model.LatLng(location.getLatitude(), location.getLongitude());
+        LatLng latest = new LatLng(location.getLatitude(), location.getLongitude());
         localObsMap.put(latest, new Observation(rssi, location.getLatitude(), location.getLongitude(), location.getAltitude()));
+
+        // Update the map with the new survey observation (must run on UI thread)
+        runOnUiThread(() -> {
+            if (mapLibreMap != null) {
+                Style style = mapLibreMap.getStyle();
+                if (style != null) {
+                    try {
+                        // Build features for all survey observations
+                        Feature[] features = new Feature[localObsMap.size()];
+                        int i = 0;
+                        for (Map.Entry<LatLng, Observation> obs : localObsMap.entrySet()) {
+                            LatLng pos = obs.getKey();
+                            int signal = obs.getValue().getRssi();
+                            Feature f = Feature.fromGeometry(Point.fromLngLat(pos.getLongitude(), pos.getLatitude()));
+                            f.addNumberProperty("signal", signal);
+                            features[i++] = f;
+                        }
+
+                        // Update the survey source
+                        GeoJsonSource surveySource = style.getSourceAs("survey");
+                        if (surveySource != null) {
+                            surveySource.setGeoJson(FeatureCollection.fromFeatures(features));
+                        }
+
+                        // Compute and update centroid based on survey observations
+                        LatLng estCentroid = computeObservationLocation(localObsMap);
+                        if (estCentroid.getLatitude() != 0d && estCentroid.getLongitude() != 0d) {
+                            Feature centroidFeature = Feature.fromGeometry(
+                                    Point.fromLngLat(estCentroid.getLongitude(), estCentroid.getLatitude()));
+                            GeoJsonSource centroidSource = style.getSourceAs("centroid");
+                            if (centroidSource != null) {
+                                centroidSource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{centroidFeature}));
+                            }
+                        }
+
+                        Logging.info("survey observation added: " + rssi + " dBm");
+                    } catch (Exception ex) {
+                        Logging.error("Error updating survey markers: " + ex.getMessage());
+                    }
+                }
+            }
+        });
     }
 
     public static class CryptoDialog extends DialogFragment {

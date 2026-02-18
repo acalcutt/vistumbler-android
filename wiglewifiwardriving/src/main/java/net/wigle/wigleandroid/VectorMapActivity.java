@@ -191,23 +191,63 @@ public class VectorMapActivity extends ScreenChildActivity {
                             fabAttribution.setLayoutParams(mlpA);
                         }
                     } catch (Exception ignored) {}
-                    // update map padding if map is ready — post to ensure layer bar measured
+                    // adjust MapView margins so map doesn't render behind status/nav bars
                     try {
-                        if (mapLibreMap != null) {
-                            final int topInset = currentInsetTop;
-                            final int bottomInset = currentInsetBottom;
-                            final int rightInset = currentInsetRight;
-                            if (layerButtonBar != null) {
-                                layerButtonBar.post(() -> {
-                                    int layerBarHeight = layerButtonBar.getHeight();
-                                    try { mapLibreMap.setPadding(0, topInset + layerBarHeight, rightInset, bottomInset); } catch (Exception ignored) {}
-                                });
-                            } else {
-                                try { mapLibreMap.setPadding(0, topInset, rightInset, bottomInset); } catch (Exception ignored) {}
+                        if (mapView != null) {
+                            Insets navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+                            int statusBarHeight = 0;
+                            int resource = getResources().getIdentifier("status_bar_height", "dimen", "android");
+                            if (resource > 0) {
+                                statusBarHeight = getResources().getDimensionPixelSize(resource);
+                            }
+                            ViewGroup.LayoutParams lpMap = mapView.getLayoutParams();
+                            if (lpMap instanceof MarginLayoutParams) {
+                                MarginLayoutParams mlpMap = (MarginLayoutParams) lpMap;
+                                int orientation = getResources().getConfiguration().orientation;
+                                if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                                    // Always apply status bar height to top
+                                    mlpMap.topMargin = statusBarHeight;
+                                    mlpMap.bottomMargin = 0;
+                                    // Menu/nav bar on right
+                                    if (navBars.right > 0) {
+                                        mlpMap.leftMargin = 0;
+                                        mlpMap.rightMargin = navBars.right;
+                                    }
+                                    // Menu/nav bar on left
+                                    else if (navBars.left > 0) {
+                                        mlpMap.leftMargin = navBars.left;
+                                        mlpMap.rightMargin = 0;
+                                    } else {
+                                        mlpMap.leftMargin = 0;
+                                        mlpMap.rightMargin = 0;
+                                    }
+                                } else {
+                                    // Portrait: status bar on top, nav bar on bottom, left/right = nav bar insets
+                                    mlpMap.topMargin = statusBarHeight;
+                                    mlpMap.bottomMargin = navBars.bottom;
+                                    mlpMap.leftMargin = navBars.left;
+                                    mlpMap.rightMargin = navBars.right;
+                                }
+                                mapView.setLayoutParams(mlpMap);
                             }
                         }
                     } catch (Exception ignored) {}
-                    return insets;
+                    // NOTE: MapView renders edge-to-edge; FABs and layer bar handle their own insets
+                    // update map padding if map is ready — only for layer bar overlay (margins handle system bars)
+                    try {
+                        if (mapLibreMap != null) {
+                            if (layerButtonBar != null) {
+                                layerButtonBar.post(() -> {
+                                    int layerBarHeight = layerButtonBar.getHeight();
+                                    try { mapLibreMap.setPadding(0, layerBarHeight, 0, 0); } catch (Exception ignored) {}
+                                });
+                            } else {
+                                try { mapLibreMap.setPadding(0, 0, 0, 0); } catch (Exception ignored) {}
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                    // consume insets so system doesn't apply them automatically
+                    return WindowInsetsCompat.CONSUMED;
                 }
             });
         }
@@ -269,11 +309,11 @@ public class VectorMapActivity extends ScreenChildActivity {
                             } catch (Exception ex) {
                                 Log.w("VectorMapActivity", "Failed to create live sources/layers: " + ex.getMessage());
                             }
-                            // apply any saved insets to map padding now that style is loaded
+                            // apply map padding for layer bar overlay (margins handle system bars)
                             try {
                                 int layerBarHeight = (layerButtonBar != null) ? layerButtonBar.getHeight() : 0;
-                                if (currentInsetTop > 0 || currentInsetBottom > 0 || currentInsetRight > 0) {
-                                    mapLibreMap.setPadding(0, currentInsetTop + layerBarHeight, currentInsetRight, currentInsetBottom);
+                                if (layerBarHeight > 0) {
+                                    mapLibreMap.setPadding(0, layerBarHeight, 0, 0);
                                 }
                             } catch (Exception ignored) {}
                             // add click listener to show details for features

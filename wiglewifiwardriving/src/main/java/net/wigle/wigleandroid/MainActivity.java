@@ -311,8 +311,13 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
                             final Insets innerPadding = insets.getInsets(
                                     WindowInsetsCompat.Type.statusBars() |
                                             WindowInsetsCompat.Type.displayCutout());
+                            final Insets navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+                            // Combine insets for all sides - nav bar can be on bottom, left, or right
                             v.setPadding(
-                                    innerPadding.left, innerPadding.top, innerPadding.right, innerPadding.bottom
+                                    Math.max(innerPadding.left, navBars.left),
+                                    innerPadding.top,
+                                    Math.max(innerPadding.right, navBars.right),
+                                    navBars.bottom
                             );
                             return insets;
                         }

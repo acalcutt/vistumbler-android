@@ -6,18 +6,20 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:id="@+id/network_main"
-    android:fitsSystemWindows="false"
     tools:context=".NetworkActivity">
     <RelativeLayout
         android:id="@+id/netmap_rl"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_alignParentTop="true"
+        android:layout_below="@+id/info_overlay"
+        android:layout_above="@+id/bottom_tools_wrapper"
         tools:background="@tools:sample/backgrounds/scenic" />
     <RelativeLayout
+        android:id="@+id/info_overlay"
         style="@style/NetworkViewOverlay"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
         android:orientation="vertical"
         android:paddingBottom="4dp">
         <LinearLayout
@@ -551,7 +553,6 @@
                         android:drawablePadding="4dp"
                         app:drawableStartCompat="@drawable/hide"
                         app:tint="?attr/android:textColor"/>
-                        />
                     <CheckBox
                         android:id="@+id/hide_mac"
                         android:layout_width="wrap_content"
@@ -597,7 +598,7 @@
                         android:id="@+id/block_mac"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/mac"
+                        android:text="@string.mac"
                         />
                     <CheckBox
                         android:id="@+id/block_oui"
