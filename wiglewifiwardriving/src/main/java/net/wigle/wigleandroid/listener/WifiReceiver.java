@@ -244,7 +244,6 @@ public class WifiReceiver extends BroadcastReceiver {
                     // set the LatLng for mapping
                     final LatLng LatLng = new LatLng( location.getLatitude(), location.getLongitude() );
                     network.setLatLng( LatLng );
-                    MainActivity.addNetworkToMap(network);
                     try {
                         String sec = "secure";
                         int crypto = network.getCrypto();

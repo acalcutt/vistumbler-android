@@ -1070,7 +1070,6 @@ public final class MappingFragment extends Fragment {
                         editor.putBoolean(prefix + PreferenceKeys.PREF_MAPF_CELL, cell.isChecked());
                         editor.putBoolean(prefix + PreferenceKeys.PREF_MAPF_ENABLED, enabled.isChecked());
                         editor.apply();
-                        MainActivity.reclusterMap();
 
                         if (null != dialog) {
                             dialog.dismiss();

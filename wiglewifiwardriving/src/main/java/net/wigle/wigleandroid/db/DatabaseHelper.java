@@ -819,7 +819,6 @@ public final class DatabaseHelper extends Thread {
                 final Network cacheNetwork = MainActivity.getNetworkCache().get( bssid );
                 if (cacheNetwork != null) {
                     cacheNetwork.setIsNew();
-                    MainActivity.updateNetworkOnMap(network);
                 }
 
                 // to make sure this new network's location is written

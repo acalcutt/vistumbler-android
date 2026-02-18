@@ -1302,17 +1302,6 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
         return ListFragment.lameStatic.networkCache;
     }
 
-    public static void addNetworkToMap(final Network network) {
-        // No-op: VectorMapActivity receives live updates via LiveMapUpdater
-    }
-
-    public static void updateNetworkOnMap(final Network network) {
-        // No-op: VectorMapActivity receives live updates via LiveMapUpdater
-    }
-
-    public static void reclusterMap() {
-        // No-op: VectorMapActivity handles its own clustering
-    }
 
     public static void writeError(final Thread thread, final Throwable throwable, final Context context) {
         writeError(thread, throwable, context, null);
