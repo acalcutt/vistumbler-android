@@ -41,14 +41,19 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build APK (release)
+      - name: Build APK
         run: |
-          ./gradlew clean assembleRelease -x lint
+          if [ "${{ github.event.inputs.build_type }}" = "debug" ]; then
+            ./gradlew clean assembleDebug -x lint
+          else
+            ./gradlew clean assembleRelease -x lint
+          fi
 
       - name: Collect APKs
         run: ls -R **/build/outputs || true
 
       - name: Decode Android keystore (from secret)
+        if: github.event.inputs.build_type != 'debug' && startsWith(github.ref, 'refs/tags/')
         run: |
           if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
             echo "ANDROID_KEYSTORE_BASE64 secret not set; skipping keystore decode"
@@ -81,6 +86,7 @@ jobs:
           echo "PATH=$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/build-tools/33.0.2:$PATH" >> $GITHUB_ENV
 
       - name: Sign APKs with keystore
+        if: github.event.inputs.build_type != 'debug' && startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
           shopt -s globstar || true
@@ -113,6 +119,7 @@ jobs:
           done
 
       - name: Verify signed APKs
+        if: github.event.inputs.build_type != 'debug' && startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
           shopt -s globstar || true
