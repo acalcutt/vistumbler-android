@@ -68,6 +68,7 @@ import net.wigle.wigleandroid.ui.WiGLEAuthDialog;
 import net.wigle.wigleandroid.ui.WiGLEToast;
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
+import net.wigle.wigleandroid.net.WifiDBApiManager;
 
 import org.json.JSONObject;
 
@@ -531,40 +532,81 @@ public class DBResultActivity extends ProgressThrobberActivity {
         if (null != s) {
             queryFailed = false;
             if (null == queryArgs.getType() /*ALIBI: default to WiFi, but shouldn't happen*/ || WIFI.equals(queryArgs.getType())) {
-                s.apiManager.searchWiFi(queryParams, new AuthenticatedRequestCompletedListener<WiFiSearchResponse, JSONObject>() {
-                    @Override
-                    public void onAuthenticationRequired() {
-                        if (null != fa) {
-                            WiGLEAuthDialog.createDialog(fa, getString(R.string.login_title),
-                                    getString(R.string.login_required), getString(R.string.login),
-                                    getString(R.string.cancel));
-                        }
-                    }
-
-                    @Override
-                    public void onTaskCompleted() {
-                        if (null != searchResponse) {
-                            handleResults();
-                        } else {
-                            if (queryFailed) {
-                                handleFailedRequest();
-                            } else {
-                                handleEmptyResult();
+                // Prefer WifiDB v1 search API if a WifiDB URL is configured; fall back to WiGLE search otherwise
+                final SharedPreferences prefs = DBResultActivity.this.getApplicationContext().getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                final String wdbUrl = prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, "");
+                if (wdbUrl != null && !wdbUrl.isEmpty()) {
+                    WifiDBApiManager wdb = new WifiDBApiManager(DBResultActivity.this);
+                    wdb.searchV1(queryParams, new AuthenticatedRequestCompletedListener<WiFiSearchResponse, JSONObject>() {
+                        @Override
+                        public void onAuthenticationRequired() {
+                            if (null != fa) {
+                                WiGLEAuthDialog.createDialog(fa, getString(R.string.login_title),
+                                        getString(R.string.login_required), getString(R.string.login),
+                                        getString(R.string.cancel));
                             }
                         }
-                    }
 
-                    @Override
-                    public void onTaskSucceeded(WiFiSearchResponse response) {
-                        searchResponse = response;
-                    }
+                        @Override
+                        public void onTaskCompleted() {
+                            if (null != searchResponse) {
+                                handleResults();
+                            } else {
+                                if (queryFailed) {
+                                    handleFailedRequest();
+                                } else {
+                                    handleEmptyResult();
+                                }
+                            }
+                        }
 
-                    @Override
-                    public void onTaskFailed(int status, JSONObject error) {
-                        searchResponse = null;
-                        queryFailed = true;
-                    }
-                });
+                        @Override
+                        public void onTaskSucceeded(WiFiSearchResponse response) {
+                            searchResponse = response;
+                        }
+
+                        @Override
+                        public void onTaskFailed(int status, JSONObject error) {
+                            searchResponse = null;
+                            queryFailed = true;
+                        }
+                    });
+                } else {
+                    s.apiManager.searchWiFi(queryParams, new AuthenticatedRequestCompletedListener<WiFiSearchResponse, JSONObject>() {
+                        @Override
+                        public void onAuthenticationRequired() {
+                            if (null != fa) {
+                                WiGLEAuthDialog.createDialog(fa, getString(R.string.login_title),
+                                        getString(R.string.login_required), getString(R.string.login),
+                                        getString(R.string.cancel));
+                            }
+                        }
+
+                        @Override
+                        public void onTaskCompleted() {
+                            if (null != searchResponse) {
+                                handleResults();
+                            } else {
+                                if (queryFailed) {
+                                    handleFailedRequest();
+                                } else {
+                                    handleEmptyResult();
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void onTaskSucceeded(WiFiSearchResponse response) {
+                            searchResponse = response;
+                        }
+
+                        @Override
+                        public void onTaskFailed(int status, JSONObject error) {
+                            searchResponse = null;
+                            queryFailed = true;
+                        }
+                    });
+                }
             } else if (BT.equals(queryArgs.getType())) {
                 s.apiManager.searchBt(queryParams, new AuthenticatedRequestCompletedListener<BtSearchResponse, JSONObject>() {
                     @Override
