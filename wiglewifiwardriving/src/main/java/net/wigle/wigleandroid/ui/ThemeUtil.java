@@ -56,6 +56,7 @@ public class ThemeUtil {
     }
 
     public static void setMapTheme(final MapLibreMap mapLibreMap, final Context c, final SharedPreferences prefs, final int mapNightThemeId) {
+        final String defaultStyleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
         if (shouldUseMapNightMode(c, prefs)) {
             try (InputStream is = c.getResources().openRawResource(mapNightThemeId)) {
                 byte[] bytes = is.readAllBytes();
@@ -66,6 +67,15 @@ public class ThemeUtil {
                 Logging.error("Unable to theme map: ", e);
             } catch (Exception e) {
                 Logging.error("Unable to apply map style: ", e);
+            }
+        } else {
+            try {
+                // Apply a sensible default vector style so maps render even when
+                // night theming is not enabled. Vector tiles come from WifiDB
+                // style server used elsewhere in the project.
+                mapLibreMap.setStyle(defaultStyleUrl);
+            } catch (Exception e) {
+                Logging.error("Unable to apply default map style: ", e);
             }
         }
     }
