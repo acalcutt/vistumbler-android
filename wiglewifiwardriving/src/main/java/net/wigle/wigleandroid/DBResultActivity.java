@@ -25,6 +25,8 @@ import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
+import android.text.format.DateFormat;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
@@ -49,6 +51,9 @@ import org.maplibre.android.MapLibre;
 import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.geometry.LatLng;
 import org.maplibre.android.geometry.LatLngBounds;
+import org.maplibre.geojson.Feature;
+import org.maplibre.geojson.Point;
+import android.graphics.PointF;
 
 import net.wigle.wigleandroid.background.PooledQueryExecutor;
 import net.wigle.wigleandroid.model.ConcurrentLinkedHashMap;
@@ -71,6 +76,9 @@ import net.wigle.wigleandroid.util.PreferenceKeys;
 import net.wigle.wigleandroid.net.WifiDBApiManager;
 
 import org.json.JSONObject;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class DBResultActivity extends ProgressThrobberActivity {
     private static final int MENU_RETURN = 12;
@@ -94,6 +102,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
 
     private SetNetworkListAdapter listAdapter;
     private MapView mapView;
+    private ListView listView;
     private MapRender mapRender;
     private final List<Network> resultList = new ArrayList<>();
     private final ConcurrentLinkedHashMap<LatLng, Integer> obsMap = new ConcurrentLinkedHashMap<>();
@@ -167,8 +176,8 @@ public class DBResultActivity extends ProgressThrobberActivity {
     private void setupList() {
         // not set by nonconfig retain
         listAdapter = new SetNetworkListAdapter( this, true, R.layout.row );
-        final ListView listView = findViewById( R.id.dblist );
-        ListFragment.setupListAdapter( listView, MainActivity.getMainActivity(), listAdapter, true );
+        this.listView = findViewById( R.id.dblist );
+        ListFragment.setupListAdapter( this.listView, MainActivity.getMainActivity(), listAdapter, true );
     }
 
     private void setupMap(final LatLng center, final Bundle savedInstanceState, final SharedPreferences prefs) {
@@ -185,6 +194,138 @@ public class DBResultActivity extends ProgressThrobberActivity {
                         .target(center).zoom(DEFAULT_ZOOM).build(); //TODO: zoom all the way out instead?
                 googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
             }
+            // If results were added to the list before the map/style was ready, ensure they are added to the map now
+            try {
+                if (listAdapter != null && mapRender != null && listAdapter.getCount() > 0) {
+                    for (int i = 0; i < listAdapter.getCount(); i++) {
+                        final Network n = listAdapter.getItem(i);
+                        if (n != null) try { mapRender.addItem(n); } catch (Exception ignored) {}
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            try {
+                // add click listener to show details for DB result features
+                googleMap.addOnMapClickListener(point -> {
+                    try {
+                        PointF screenPt = googleMap.getProjection().toScreenLocation(point);
+                        List<Feature> features = googleMap.queryRenderedFeatures(screenPt,
+                                "db_open_unclustered", "db_wep_unclustered", "db_wpa_unclustered", "db_bt_unclustered", "db_cell_unclustered");
+                        if (features == null || features.isEmpty()) return false;
+                        StringBuilder out = new StringBuilder();
+                        for (Feature f : features) {
+                            if (f == null) continue;
+                            String bssid = null;
+                            try { if (f.hasProperty("bssid")) bssid = f.getProperty("bssid").getAsString(); } catch (Exception ex) { try { bssid = f.getStringProperty("bssid"); } catch (Exception ignored) {} }
+                            Network net = null;
+                            if (bssid != null) {
+                                try { net = ListFragment.lameStatic.dbHelper.getNetwork(bssid); } catch (Exception ignored) {}
+                            }
+                            if (net != null) {
+                                out.append("SSID: ").append(net.getSsid()).append('\n');
+                                out.append("Mac: ").append(net.getBssid()).append('\n');
+                                Integer ch = net.getChannel(); if (ch != null) out.append("Channel: ").append(ch).append('\n');
+                                out.append("Auth/Capabilities: ").append(net.getShowCapabilities()).append('\n');
+                                out.append("Network Type: ").append(net.getType()).append('\n');
+                                out.append("Signal: ").append(net.getLevel()).append('\n');
+                                if (net.getLatLng() != null) {
+                                    out.append("Latitude: ").append(net.getLatLng().getLatitude()).append('\n');
+                                    out.append("Longitude: ").append(net.getLatLng().getLongitude()).append('\n');
+                                }
+                            } else {
+                                // fallback to feature props
+                                String ss = null; try { if (f.hasProperty("ssid")) ss = f.getProperty("ssid").getAsString(); } catch (Exception ignored) {}
+                                String id = null; try { if (f.hasProperty("id")) id = f.getProperty("id").getAsString(); } catch (Exception ignored) {}
+                                out.append("SSID: ").append(ss == null ? "" : ss).append('\n');
+                                out.append("ID: ").append(id == null ? "" : id).append('\n');
+                                if (f.geometry() != null && f.geometry() instanceof Point) {
+                                    Point p = (Point) f.geometry();
+                                    out.append("Latitude: ").append(p.latitude()).append('\n');
+                                    out.append("Longitude: ").append(p.longitude()).append('\n');
+                                }
+                            }
+                            out.append('\n');
+                        }
+                        if (out.length() > 0) {
+                            final String baseMessage = out.toString();
+                            // If a single feature was clicked and we have a DB record, include last/first active times
+                            String bssidSingle = null;
+                            if (features.size() == 1) {
+                                try {
+                                    Feature f0 = features.get(0);
+                                    if (f0 != null) {
+                                        try { if (f0.hasProperty("bssid")) bssidSingle = f0.getProperty("bssid").getAsString(); } catch (Exception ex) { try { bssidSingle = f0.getStringProperty("bssid"); } catch (Exception ignored) {} }
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+
+                            final StringBuilder messageBuilder = new StringBuilder(baseMessage);
+
+                            final Network singleNet = (bssidSingle == null) ? null : ListFragment.lameStatic.dbHelper.getNetwork(bssidSingle);
+                            if (singleNet != null && singleNet.getLastTime() != null) {
+                                long lt = singleNet.getLastTime();
+                                String formatted;
+                                if (DateFormat.is24HourFormat(getApplicationContext())) {
+                                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+                                    formatted = sdf.format(new Date(lt));
+                                } else {
+                                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd h:mm:ss a", Locale.US);
+                                    formatted = sdf.format(new Date(lt));
+                                }
+                                messageBuilder.append("Last Active: ").append(formatted).append('\n');
+                            }
+
+                            final androidx.appcompat.app.AlertDialog[] dlg = new androidx.appcompat.app.AlertDialog[1];
+                            dlg[0] = new androidx.appcompat.app.AlertDialog.Builder(DBResultActivity.this)
+                                    .setTitle("Details")
+                                    .setMessage(messageBuilder.toString())
+                                    .setPositiveButton("OK", null)
+                                    .show();
+
+                            // If we have a single network, query DB for first-seen time and update dialog when available
+                            if (singleNet != null && bssidSingle != null) {
+                                final Handler uiHandler = new Handler(Looper.getMainLooper());
+                                final String sql = "SELECT MIN(time) FROM " + net.wigle.wigleandroid.db.DatabaseHelper.LOCATION_TABLE + " WHERE bssid = ? AND time > 0";
+                                final PooledQueryExecutor.Request firstReq = new PooledQueryExecutor.Request(sql, new String[]{bssidSingle}, new PooledQueryExecutor.ResultHandler() {
+                                    @Override
+                                    public boolean handleRow(final android.database.Cursor cursor) {
+                                        if (!cursor.isNull(0)) {
+                                            long firstTime = cursor.getLong(0);
+                                            String formatted;
+                                            if (DateFormat.is24HourFormat(getApplicationContext())) {
+                                                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+                                                formatted = sdf.format(new Date(firstTime));
+                                            } else {
+                                                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd h:mm:ss a", Locale.US);
+                                                formatted = sdf.format(new Date(firstTime));
+                                            }
+                                            final String toAppend = "First Active: " + formatted + '\n';
+                                            uiHandler.post(() -> {
+                                                try {
+                                                    if (dlg[0] != null && dlg[0].isShowing()) {
+                                                        messageBuilder.append(toAppend);
+                                                        dlg[0].setMessage(messageBuilder.toString());
+                                                    }
+                                                } catch (Exception ignored) {}
+                                            });
+                                        }
+                                        return false; // only expect one result
+                                    }
+
+                                    @Override
+                                    public void complete() {
+                                        // nothing
+                                    }
+                                }, ListFragment.lameStatic.dbHelper);
+                                PooledQueryExecutor.enqueue(firstReq);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        // ignore
+                    }
+                    return true;
+                });
+            } catch (Exception ignored) {}
         });
         final RelativeLayout rlView = findViewById( R.id.db_map_rl );
         rlView.addView( mapView );
@@ -300,7 +441,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
         final Handler handler = new Handler(Looper.getMainLooper());
         // Log SQL and params to aid debugging when no results are returned
         try {
-            Logging.info("DBResultActivity: SQL=" + sql + " params=" + params.toString());
+            Logging.info("[DBSEARCH] DBResultActivity: SQL=" + sql + " params=" + params.toString());
         } catch (Exception ignored) {}
 
         final PooledQueryExecutor.Request request = new PooledQueryExecutor.Request( sql, params.toArray(new String[0]),
@@ -311,6 +452,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 final float lat = cursor.getFloat(1);
                 final float lon = cursor.getFloat(2);
                 count[0]++;
+
+                try {
+                    Logging.info("[DBSEARCH] DBResultActivity: handleRow bssid=" + bssid + " lat=" + lat + " lon=" + lon);
+                } catch (Exception ignored) {}
 
                 if ( bounds == null ) {
                     top.put( (float) count[0], bssid );
@@ -333,10 +478,22 @@ public class DBResultActivity extends ProgressThrobberActivity {
 
             @Override
             public void complete() {
+                try {
+                    Logging.info("[DBSEARCH] DBResultActivity: query complete, results=" + top.values().size() + " totalCount=" + count[0]);
+                } catch (Exception ignored) {}
                 if (top.values().size() > 0) {
                     resultList.clear();
                     for (final String bssid : top.values()) {
                         final Network network = ListFragment.lameStatic.dbHelper.getNetwork(bssid);
+                        if (network == null) {
+                            try {
+                                Logging.info("[DBSEARCH] DBResultActivity: getNetwork returned null for bssid=" + bssid);
+                            } catch (Exception ignored) {}
+                        } else {
+                            try {
+                                Logging.info("[DBSEARCH] DBResultActivity: getNetwork bssid=" + network.getBssid() + " pos=" + network.getLatLng());
+                            } catch (Exception ignored) {}
+                        }
                         resultList.add(network);
                         final LatLng point = network.getLatLng();
                         if (point != null) {
@@ -344,28 +501,75 @@ public class DBResultActivity extends ProgressThrobberActivity {
                         }
                     }
                     if (resultList.size() > 0) {
+                        try {
+                            Logging.info("[DBSEARCH] DBResultActivity: posting results to main, resultList.size=" + resultList.size() + " bssids=" + top.values().toString());
+                        } catch (Exception ignored) {}
                         handler.post(() -> {
-                            stopAnimation();
-                            LatLngBounds.Builder builder = new LatLngBounds.Builder();
-                            boolean hasValidPoints = false;
-                            if (null != mapRender) {
+                            try {
+                                Logging.info("[DBSEARCH] DBResultActivity: handler running on main=" + (Looper.myLooper() == Looper.getMainLooper()) + " resultList.size=" + resultList.size());
+
+                                stopAnimation();
+                                LatLngBounds.Builder builder = new LatLngBounds.Builder();
+                                boolean hasValidPoints = false;
+                                int includedCount = 0;
+                                LatLng firstIncludedLatLng = null;
                                 for (Network n : resultList) {
-                                    listAdapter.add(n);
-                                    mapRender.addItem(n);
-                                    final LatLng ll = n.getPosition();
+                                    try {
+                                        listAdapter.add(n);
+                                    } catch (Exception lae) {
+                                        Logging.error("[DBSEARCH] DBResultActivity: listAdapter.add threw", lae);
+                                    }
+                                    try {
+                                        Logging.info("[DBSEARCH] DBResultActivity: adding to list bssid=" + (n == null ? "null" : n.getBssid()) + " pos=" + (n == null ? "null" : n.getLatLng()));
+                                    } catch (Exception ignored) {}
+
+                                    final LatLng ll = (n == null) ? null : n.getPosition();
                                     //noinspection ConstantConditions
                                     if (ll != null) {
                                         builder.include(ll);
                                         hasValidPoints = true;
+                                        if (includedCount == 0) {
+                                            firstIncludedLatLng = ll;
+                                        }
+                                        includedCount++;
+                                        if (null != mapRender) {
+                                            try {
+                                                mapRender.addItem(n);
+                                            } catch (Exception mre) {
+                                                Logging.error("[DBSEARCH] DBResultActivity: mapRender.addItem threw for bssid=" + n.getBssid(), mre);
+                                            }
+                                        }
                                     }
                                 }
+                                try {
+                                    listAdapter.notifyDataSetChanged();
+                                    Logging.info("[DBSEARCH] DBResultActivity: listAdapter.notifyDataSetChanged() called");
+                                } catch (Exception ignored) {}
+                                try {
+                                    final int adapterCount = listAdapter == null ? -1 : listAdapter.getCount();
+                                    final String lvInfo = (listView == null) ? "null" : ("childCount="+listView.getChildCount()+" vis="+listView.getVisibility());
+                                    Logging.info("[DBSEARCH] DBResultActivity: post-update adapterCount=" + adapterCount + " listView=" + lvInfo);
+                                } catch (Exception ignored) {}
+
+                                if (hasValidPoints) {
+                                    try {
+                                        if (includedCount > 1) {
+                                            mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
+                                        } else if (includedCount == 1 && firstIncludedLatLng != null) {
+                                            final LatLng target = firstIncludedLatLng;
+                                            final int zoom = DEFAULT_ZOOM;
+                                            mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(target, zoom)));
+                                        }
+                                    } catch (Exception mce) {
+                                        Logging.error("[DBSEARCH] DBResultActivity: moveCamera threw", mce);
+                                    }
+                                } else {
+                                    handler.post(() -> handleEmptyResult());
+                                }
+                                resultList.clear();
+                            } catch (Exception e) {
+                                Logging.error("[DBSEARCH] DBResultActivity: exception while updating UI", e);
                             }
-                            if (hasValidPoints) {
-                                mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
-                            } else {
-                                handler.post(() -> handleEmptyResult());
-                            }
-                            resultList.clear();
                         });
                     }
                 } else {
@@ -381,13 +585,20 @@ public class DBResultActivity extends ProgressThrobberActivity {
         stopAnimation();
         listAdapter.clear();
         LatLngBounds.Builder builder = new LatLngBounds.Builder();
+        int includedCount = 0;
+        LatLng firstIncludedLatLng = null;
 
         if (null != searchResponse && null != searchResponse.getResults()) {
-            for (WiFiSearchResponse.WiFiNetwork net :searchResponse.getResults()) {
+                    for (WiFiSearchResponse.WiFiNetwork net :searchResponse.getResults()) {
                 if (null != net) {
                     final Network n = WiFiSearchResponse.asNetwork(net);
                     listAdapter.add(n);
-                    builder.include(n.getPosition());
+                    final LatLng pos = n.getPosition();
+                    if (pos != null) {
+                        builder.include(pos);
+                        if (includedCount == 0) firstIncludedLatLng = pos;
+                        includedCount++;
+                    }
 
                     if (n.getLatLng() != null && mapRender != null) {
                         mapRender.addItem(n);
@@ -395,11 +606,16 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 }
             }
         } else if (null != btSearchResponse && null != btSearchResponse.getResults()) {
-            for (BtSearchResponse.BtNetwork net :btSearchResponse.getResults()) {
+                    for (BtSearchResponse.BtNetwork net :btSearchResponse.getResults()) {
                 if (null != net) {
                     final Network n = BtSearchResponse.asNetwork(net);
                     listAdapter.add(n);
-                    builder.include(n.getPosition());
+                    final LatLng pos = n.getPosition();
+                    if (pos != null) {
+                        builder.include(pos);
+                        if (includedCount == 0) firstIncludedLatLng = pos;
+                        includedCount++;
+                    }
 
                     if (n.getLatLng() != null && mapRender != null) {
                         mapRender.addItem(n);
@@ -407,11 +623,16 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 }
             }
         } else if (null != cellSearchResponse && null != cellSearchResponse.getResults()) {
-            for (CellSearchResponse.CellNetwork net :cellSearchResponse.getResults()) {
+                    for (CellSearchResponse.CellNetwork net :cellSearchResponse.getResults()) {
                 if (null != net) {
                     final Network n = CellSearchResponse.asNetwork(net);
                     listAdapter.add(n);
-                    builder.include(n.getPosition());
+                    final LatLng pos = n.getPosition();
+                    if (pos != null) {
+                        builder.include(pos);
+                        if (includedCount == 0) firstIncludedLatLng = pos;
+                        includedCount++;
+                    }
 
                     if (n.getLatLng() != null && mapRender != null) {
                         mapRender.addItem(n);
@@ -421,7 +642,13 @@ public class DBResultActivity extends ProgressThrobberActivity {
         }
         if (!listAdapter.isEmpty()) {
             try {
-                mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
+                if (includedCount > 1) {
+                    mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
+                } else if (includedCount == 1 && firstIncludedLatLng != null) {
+                    final LatLng target = firstIncludedLatLng;
+                    final int zoom = DEFAULT_ZOOM;
+                    mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(target, zoom)));
+                }
             } catch (IllegalStateException ise) {
                 Logging.error("Illegal state exception on map move: ", ise);
             }

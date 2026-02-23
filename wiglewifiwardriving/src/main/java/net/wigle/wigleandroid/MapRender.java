@@ -101,16 +101,15 @@ public class MapRender {
                 Logging.info("MapRender: ctor stack: " + sb.toString());
             } catch (Throwable t) {}
                     // create GeoJson sources (open, wep, wpa+, bt, cell) so clustering doesn't mix types
-                liveOpenSource = new GeoJsonSource(sourcePrefix + "open", FeatureCollection.fromFeatures(new Feature[]{}),
-                    new GeoJsonOptions().withCluster(true).withClusterRadius(50));
-                liveWepSource = new GeoJsonSource(sourcePrefix + "wep", FeatureCollection.fromFeatures(new Feature[]{}),
-                    new GeoJsonOptions().withCluster(true).withClusterRadius(50));
-                liveWpaSource = new GeoJsonSource(sourcePrefix + "wpa", FeatureCollection.fromFeatures(new Feature[]{}),
-                    new GeoJsonOptions().withCluster(true).withClusterRadius(50));
-                liveBtSource = new GeoJsonSource(sourcePrefix + "bt", FeatureCollection.fromFeatures(new Feature[]{}),
-                    new GeoJsonOptions().withCluster(true).withClusterRadius(50));
-                liveCellSource = new GeoJsonSource(sourcePrefix + "cell", FeatureCollection.fromFeatures(new Feature[]{}),
-                    new GeoJsonOptions().withCluster(true).withClusterRadius(50));
+                // For DB result views, disable clustering so individual points render immediately.
+                final GeoJsonOptions clusteredOptions = new GeoJsonOptions().withCluster(true).withClusterRadius(50);
+                final GeoJsonOptions noClusterOptions = new GeoJsonOptions();
+                final GeoJsonOptions opts = isDbResult ? noClusterOptions : clusteredOptions;
+                liveOpenSource = new GeoJsonSource(sourcePrefix + "open", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveWepSource = new GeoJsonSource(sourcePrefix + "wep", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveWpaSource = new GeoJsonSource(sourcePrefix + "wpa", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveBtSource = new GeoJsonSource(sourcePrefix + "bt", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveCellSource = new GeoJsonSource(sourcePrefix + "cell", FeatureCollection.fromFeatures(new Feature[]{}), opts);
 
             // If style is already loaded, create sources/layers now. Otherwise register listener to add them when style loads.
             if (map.getStyle() != null) {
@@ -374,6 +373,13 @@ public class MapRender {
                 }
             } catch (Exception ex) {
                 Logging.error("MapRender: error inspecting layers: " + ex, ex);
+            }
+            // After creating sources/layers, ensure any queued features are applied to the sources
+            try {
+                updateSource();
+                Logging.info("MapRender: updateSource() called after adding sources/layers");
+            } catch (Exception ex) {
+                Logging.error("MapRender: error updating sources after layer add: " + ex, ex);
             }
         } catch (Exception ex) {
             Logging.error("MapRender: error adding sources/layers: " + ex, ex);
