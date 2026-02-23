@@ -442,8 +442,8 @@ public class VectorMapActivity extends ScreenChildActivity {
                                                     out.append("Network Type: ").append(net.getType()).append('\n');
                                                     out.append("Signal: ").append(net.getLevel()).append('\n');
                                                     if (net.getLatLng() != null) {
-                                                        out.append("Latitude: ").append(net.getLatLng().latitude).append('\n');
-                                                        out.append("Longitude: ").append(net.getLatLng().longitude).append('\n');
+                                                        out.append("Latitude: ").append(net.getLatLng().getLatitude()).append('\n');
+                                                        out.append("Longitude: ").append(net.getLatLng().getLongitude()).append('\n');
                                                     }
                                                     Long lt = net.getLastTime();
                                                     if (lt != null) out.append("Last: ").append(df.format(new Date(lt))).append('\n');

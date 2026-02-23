@@ -3,8 +3,11 @@ package net.wigle.wigleandroid.model;
 import android.graphics.Color;
 import android.location.Location;
 
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.PolylineOptions;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.geojson.Point;
+import org.maplibre.geojson.LineString;
+import java.util.ArrayList;
+import java.util.List;
 
 import net.wigle.wigleandroid.MainActivity;
 
@@ -16,7 +19,7 @@ import static net.wigle.wigleandroid.MappingFragment.getRouteColorForMapType;
 public class PolylineRoute {
     public static final float DEFAULT_ROUTE_WIDTH = 15.0f; //TODO: dedup with MappingFragment
 
-    private PolylineOptions polyline;
+    private final List<LatLng> points;
     private float westExtent;
     private float eastExtent;
     private float northExtent;
@@ -27,8 +30,7 @@ public class PolylineRoute {
 
     public PolylineRoute() {
         distanceMeters = 0;
-        polyline = new PolylineOptions()
-                .clickable(false);
+        points = new ArrayList<>();
         //init to sure - opposites
         westExtent = 180f;
         eastExtent = -180f;
@@ -48,10 +50,7 @@ public class PolylineRoute {
      */
     public void addLatLng(final float latitude, final float longitude, final int mapMode, final boolean nightMode) {
         final LatLng newPoint = new LatLng(latitude, longitude);
-        polyline.add(newPoint);
-        polyline.color(getRouteColorForMapType(mapMode, nightMode));
-        polyline.width(DEFAULT_ROUTE_WIDTH);
-        polyline.zIndex(10000); //to overlay above traffic data
+        points.add(newPoint);
         if (latitude > northExtent) {
             northExtent = latitude;
         }
@@ -75,8 +74,12 @@ public class PolylineRoute {
      * Get the google maps polyline for the route
      * @return the corresponding polyline to render
      */
-    public PolylineOptions getPolyline() {
-        return polyline;
+    public LineString getLineString() {
+        final List<Point> geoPoints = new ArrayList<>();
+        for (LatLng ll : points) {
+            geoPoints.add(Point.fromLngLat(ll.getLongitude(), ll.getLatitude()));
+        }
+        return LineString.fromLngLats(geoPoints);
     }
 
     /**
@@ -113,7 +116,7 @@ public class PolylineRoute {
 
     private float getDistanceMetersBetween(LatLng last, LatLng next) {
         float[] results = new float[1];
-        Location.distanceBetween(last.latitude, last.longitude, next.latitude, next.longitude, results);
+        Location.distanceBetween(last.getLatitude(), last.getLongitude(), next.getLatitude(), next.getLongitude(), results);
         return results[0];
     }
 }

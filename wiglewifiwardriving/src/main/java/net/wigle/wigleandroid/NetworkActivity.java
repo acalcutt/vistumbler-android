@@ -558,8 +558,8 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
 
     private void setupMap(final Network network, final Bundle savedInstanceState, final SharedPreferences prefs) {
         // Initialize MapLibre
-        MapLibre.getInstance(this);
-        
+        try { MapLibre.getInstance(this); } catch (Exception ignored) {}
+
         mapView = new MapView(this);
         try {
             mapView.onCreate(savedInstanceState);
@@ -582,8 +582,8 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     public void onStyleLoaded(@NonNull Style style) {
                         // Set initial camera position if network has location
                         if (network != null && network.getLatLng() != null) {
-                            com.google.android.gms.maps.model.LatLng gmsLatLng = network.getLatLng();
-                            LatLng latLng = new LatLng(gmsLatLng.latitude, gmsLatLng.longitude);
+                            org.maplibre.android.geometry.LatLng gmsLatLng = network.getLatLng();
+                            LatLng latLng = new LatLng(gmsLatLng.getLatitude(), gmsLatLng.getLongitude());
                             final CameraPosition cameraPosition = new CameraPosition.Builder()
                                     .target(latLng).zoom(DEFAULT_ZOOM).build();
                             mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
@@ -650,9 +650,9 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
 
                             // Add the device marker immediately if we have location
                             if (network != null && network.getLatLng() != null) {
-                                com.google.android.gms.maps.model.LatLng gmsLatLng = network.getLatLng();
+                                org.maplibre.android.geometry.LatLng gmsLatLng = network.getLatLng();
                                 Feature deviceFeature = Feature.fromGeometry(
-                                        Point.fromLngLat(gmsLatLng.longitude, gmsLatLng.latitude));
+                                    Point.fromLngLat(gmsLatLng.getLongitude(), gmsLatLng.getLatitude()));
                                 deviceSource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{deviceFeature}));
                             }
 

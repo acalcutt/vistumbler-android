@@ -1,6 +1,6 @@
 package net.wigle.wigleandroid.model.api;
 
-import com.google.android.gms.maps.model.LatLng;
+import org.maplibre.android.geometry.LatLng;
 
 import net.wigle.wigleandroid.model.Network;
 import net.wigle.wigleandroid.model.NetworkType;
@@ -38,9 +38,15 @@ public class WiFiSearchResponse {
         private Double trilong;
         private String ssid;
         private String encryption;
+        private String auth;
+        private String flags;
         private final String type = "WiFi";
         private int frequency;
         private Integer channel;
+        private Integer highSig;
+        private Integer highRssi;
+        private Integer highGpsSig;
+        private Integer highGpsRssi;
 
         public String getNetid() {
             return netid;
@@ -74,6 +80,22 @@ public class WiFiSearchResponse {
             this.encryption = encryption;
         }
 
+        public String getAuth() {
+            return auth;
+        }
+
+        public void setAuth(String auth) {
+            this.auth = auth;
+        }
+
+        public String getFlags() {
+            return flags;
+        }
+
+        public void setFlags(String flags) {
+            this.flags = flags;
+        }
+
         public String getType() {
             return type;
         }
@@ -94,6 +116,18 @@ public class WiFiSearchResponse {
             this.channel = channel;
         }
 
+        public Integer getHighSig() { return highSig; }
+        public void setHighSig(Integer highSig) { this.highSig = highSig; }
+
+        public Integer getHighRssi() { return highRssi; }
+        public void setHighRssi(Integer highRssi) { this.highRssi = highRssi; }
+
+        public Integer getHighGpsSig() { return highGpsSig; }
+        public void setHighGpsSig(Integer highGpsSig) { this.highGpsSig = highGpsSig; }
+
+        public Integer getHighGpsRssi() { return highGpsRssi; }
+        public void setHighGpsRssi(Integer highGpsRssi) { this.highGpsRssi = highGpsRssi; }
+
         public Double getTrilat() {
             return trilat;
         }
@@ -109,10 +143,41 @@ public class WiFiSearchResponse {
      * @return a Network instance with some assumptions. Capabilities will be [<encryption value> SEARCH]
      */
     public static Network asNetwork(WiFiNetwork wNet) {
-        final LatLng l = new LatLng(wNet.getTrilat(),wNet.getTrilong());
+        // Guard against missing coordinates (avoid autounboxing NPE)
+        LatLng l = null;
+        Double tlat = wNet.getTrilat();
+        Double tlon = wNet.getTrilong();
+        if (tlat != null && tlon != null) {
+            l = new LatLng(tlat, tlon);
+        }
+        // Prefer full flags if provided
+        String caps;
+        if (wNet.getFlags() != null && !wNet.getFlags().isEmpty()) {
+            caps = wNet.getFlags();
+        } else {
+            // Guard encryption null
+            String enc = wNet.getEncryption();
+            String auth = wNet.getAuth();
+            if (auth != null && !auth.isEmpty()) {
+                caps = "[" + auth.toUpperCase(Locale.ROOT) + (enc != null && !enc.isEmpty() ? ("-" + enc.toUpperCase(Locale.ROOT)) : "") + " SEARCH]";
+            } else if (enc != null && !enc.isEmpty()) {
+                caps = "[" + enc.toUpperCase(Locale.ROOT) + " SEARCH]";
+            } else {
+                caps = "[ESS]";
+            }
+        }
+        int signal = 0;
+        if (wNet.getHighGpsRssi() != null) {
+            signal = wNet.getHighGpsRssi();
+        } else if (wNet.getHighRssi() != null) {
+            signal = wNet.getHighRssi();
+        } else if (wNet.getHighSig() != null) {
+            signal = wNet.getHighSig();
+        }
+
         return new Network(wNet.getNetid(), wNet.getSsid(),
-                wNet.getChannel(), "["+wNet.getEncryption().toUpperCase(Locale.ROOT)+" SEARCH]",
-                0, NetworkType.WIFI, l);
+                wNet.getChannel(), caps,
+                signal, NetworkType.WIFI, l);
     }
 
 }

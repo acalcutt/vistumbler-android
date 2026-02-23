@@ -1,7 +1,7 @@
 package net.wigle.wigleandroid;
 
 import static android.view.View.GONE;
-import static com.google.android.gms.maps.GoogleMap.*;
+import net.wigle.wigleandroid.MapTypes;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -58,20 +58,23 @@ import android.widget.Toast;
 
 import com.goebl.simplify.PointExtractor;
 import com.goebl.simplify.Simplify;
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GoogleApiAvailability;
-import com.google.android.gms.maps.CameraUpdate;
-import com.google.android.gms.maps.CameraUpdateFactory;
-import com.google.android.gms.maps.MapView;
-import com.google.android.gms.maps.MapsInitializer;
-import com.google.android.gms.maps.model.CameraPosition;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.Polyline;
-import com.google.android.gms.maps.model.PolylineOptions;
-import com.google.android.gms.maps.model.Tile;
-import com.google.android.gms.maps.model.TileOverlay;
-import com.google.android.gms.maps.model.TileOverlayOptions;
-import com.google.android.gms.maps.model.TileProvider;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.geometry.LatLngBounds;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.sources.RasterSource;
+import org.maplibre.android.style.sources.TileSet;
+import org.maplibre.android.style.layers.RasterLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.geojson.Feature;
+import org.maplibre.geojson.FeatureCollection;
+import org.maplibre.geojson.LineString;
+import org.maplibre.geojson.Point;
+import org.maplibre.android.style.sources.GeoJsonSource;
+import org.maplibre.android.style.layers.LineLayer;
 
 import net.wigle.wigleandroid.background.PooledQueryExecutor;
 import net.wigle.wigleandroid.db.DatabaseHelper;
@@ -116,8 +119,10 @@ public final class MappingFragment extends Fragment {
     private AtomicBoolean finishing;
     private Location previousLocation;
     private int previousRunNets;
-    private TileOverlay tileOverlay;
-    private Polyline routePolyline;
+    private String tileSourceId = null;
+    private String tileLayerId = null;
+    private Object routePolyline;
+    private java.util.List<Point> routePoints = new java.util.ArrayList<>();
     private Location lastLocation;
 
     private HeadingManager headingManager;
@@ -208,25 +213,16 @@ public final class MappingFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         final Activity a = getActivity();
         if (null != a) {
+            try { MapLibre.getInstance(a); } catch (Exception ignored) {}
             mapView = new MapView(a);
-            final int serviceAvailable = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(a);
-            if (serviceAvailable == ConnectionResult.SUCCESS) {
-                try {
-                    mapView.onCreate(savedInstanceState);
-                    final SharedPreferences prefs = a.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
-                    mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(), prefs, R.raw.night_style_json));
-                }
-                catch (final SecurityException ex) {
-                    Logging.error("security exception onCreateView map: " + ex, ex);
-                }
-            } else {
-                final FragmentActivity fa = getActivity();
-                if (null != fa) {
-                    WiGLEToast.showOverFragment(fa, R.string.fatal_pre_message,
-                            fa.getResources().getString(R.string.map_needs_playservice));
-                }
+            try {
+                mapView.onCreate(savedInstanceState);
+                final SharedPreferences prefs = a.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                mapView.getMapAsync(mapLibreMap -> ThemeUtil.setMapTheme(mapLibreMap, mapView.getContext(), prefs, R.raw.night_style_json));
             }
-            MapsInitializer.initialize(a);
+            catch (final SecurityException ex) {
+                Logging.error("security exception onCreateView map: " + ex, ex);
+            }
         }
         final View view = inflater.inflate(R.layout.map, container, false);
 
@@ -251,80 +247,14 @@ public final class MappingFragment extends Fragment {
         final SharedPreferences prefs = (null != a)?a.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0):null;
         final boolean visualizeRoute = prefs != null && prefs.getBoolean(PreferenceKeys.PREF_VISUALIZE_ROUTE, false);
         rlView.addView(mapView);
-        // guard against not having google play services
-        mapView.getMapAsync(googleMap -> {
-            final Context c = MappingFragment.this.getContext();
-            if (null != c) {
-                if (ActivityCompat.checkSelfPermission(c,
-                        android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                        || ActivityCompat.checkSelfPermission(MappingFragment.this.getContext(),
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    googleMap.setMyLocationEnabled(true);
-                    googleMap.setOnCameraIdleListener(() -> {
-                        if (null != prefs && prefs.getBoolean(PreferenceKeys.PREF_MAP_FOLLOW_BEARING, false)) {
-                            Float cameraBearing = getBearing(getActivity());
-                            Logging.info("Camera Bearing: "+cameraBearing);
-                            if (null != cameraBearing) {
-                                CameraPosition camPos = CameraPosition
-                                        .builder(googleMap.getCameraPosition())
-                                        .bearing(cameraBearing)
-                                        .build();
-                                googleMap.animateCamera(CameraUpdateFactory.newCameraPosition(camPos));
-                            }
-                        }
-                    });
-                }
-            }
-            googleMap.setBuildingsEnabled(true);
-            if (null != prefs) {
-                final boolean showTraffic = prefs.getBoolean(PreferenceKeys.PREF_MAP_TRAFFIC, true);
-                googleMap.setTrafficEnabled(showTraffic);
-                final int mapType = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MAP_TYPE_NORMAL);
-                googleMap.setMapType(mapType);
-            } else {
-                googleMap.setMapType(MAP_TYPE_NORMAL);
-            }
+        // initialize MapLibre map and the MapRender adapter
+        mapView.getMapAsync(mapLibreMap -> {
             final Activity a1 = getActivity();
             if (null != a1) {
-                mapRender = new MapRender(a1, googleMap, false);
+                mapRender = new MapRender(a1, mapLibreMap, false);
             }
 
-            // Seeing stack overflow crashes on multiple phones in specific locations, based on indoor svcs.
-            googleMap.setIndoorEnabled(false);
-
-            googleMap.setOnMyLocationButtonClickListener(() -> {
-                if (!state.locked) {
-
-                    state.locked = true;
-                    if (menu != null) {
-                        MenuItem item = menu.findItem(MENU_TOGGLE_LOCK);
-                        String name = state.locked ? getString(R.string.menu_turn_off_lockon) : getString(R.string.menu_turn_on_lockon);
-                        item.setTitle(name);
-                        Logging.info("on-my-location received - activating lock");
-                    }
-                }
-                return false;
-            });
-
-            googleMap.setOnCameraMoveStartedListener(reason -> {
-                if (reason == OnCameraMoveStartedListener.REASON_GESTURE) {
-                    if (state.locked) {
-                        state.locked = false;
-                        if (menu != null) {
-                            MenuItem item = menu.findItem(MENU_TOGGLE_LOCK);
-                            String name = state.locked ? getString(R.string.menu_turn_off_lockon) : getString(R.string.menu_turn_on_lockon);
-                            item.setTitle(name);
-                        }
-                    }
-                } else if (reason == OnCameraMoveStartedListener.REASON_API_ANIMATION) {
-                    //DEBUG: MainActivity.info("Camera moved due to user tap");
-                    //TODO: should we combine this case with REASON_GESTURE?
-                } else if (reason == OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION) {
-                    //MainActivity.info("Camera moved due to app directive");
-                }
-            });
-
-            // controller
+            // controller: center map
             final LatLng centerPoint = getCenter(getActivity(), oldCenter, previousLocation);
             float zoom = DEFAULT_ZOOM;
             if (oldZoom >= 0) {
@@ -335,133 +265,20 @@ public final class MappingFragment extends Fragment {
                 }
             }
 
-            final CameraPosition cameraPosition = new CameraPosition.Builder()
+            final org.maplibre.android.camera.CameraPosition cameraPosition = new org.maplibre.android.camera.CameraPosition.Builder()
                     .target(centerPoint).zoom(zoom).build();
-            googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+            mapLibreMap.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newCameraPosition(cameraPosition));
 
 
-            if (null != prefs && !PreferenceKeys.PREF_MAP_NO_TILE.equals(
-                    prefs.getString(PreferenceKeys.PREF_SHOW_DISCOVERED,
-                            PreferenceKeys.PREF_MAP_NO_TILE))) {
-                final int providerTileRes = MainActivity.isHighDefinition()?512:256;
-
-                //TODO: DRY up token composition vs AbstractApiRequest?
-                String ifAuthToken = null;
-                try {
-                    final String token = TokenAccess.getApiToken(prefs);
-                    // get authname second, as the token may clear it
-                    final String authname = prefs.getString(PreferenceKeys.PREF_AUTHNAME, null);
-                    if ((null != authname) && (null != token)) {
-                        final String encoded = Base64.encodeToString((authname + ":" + token).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-                        ifAuthToken = "Basic " + encoded;
-                    }
-                } catch (Exception uoex) {
-                    Logging.error("map tiles: unable to access credentials for mine/others", uoex);
-                }
-                final String authToken = ifAuthToken;
-
-                final String userAgent = WiGLEApiManager.USER_AGENT;
-
-
-                TileProvider tileProvider = new TileProvider() {
-                    @SuppressLint("DefaultLocale")
-                    @Override
-                    public Tile getTile(int x, int y, int zoom) {
-                        if (!checkTileExists(x, y, zoom)) {
-                            return NO_TILE;
-                        }
-
-                        final Long since = prefs.getLong(PreferenceKeys.PREF_SHOW_DISCOVERED_SINCE, 2001);
-                        int thisYear = Calendar.getInstance().get(Calendar.YEAR);
-                        String tileContents = prefs.getString(PreferenceKeys.PREF_SHOW_DISCOVERED,
-                                PreferenceKeys.PREF_MAP_NO_TILE);
-
-                        String sinceString = String.format("%d0000-00000", since);
-                        String toString = String.format("%d0000-00000", thisYear+1);
-                        String s = String.format(MAP_TILE_URL_FORMAT,
-                                zoom, x, y, sinceString, toString);
-
-                        if (MainActivity.isHighDefinition()) {
-                                s += HIGH_RES_TILE_TRAILER;
-                        }
-
-                        // ALIBI: defaults to "ALL"
-                        if (PreferenceKeys.PREF_MAP_ONLYMINE_TILE.equals(tileContents)) {
-                            s += ONLY_MINE_TILE_TRAILER;
-                        } else if (PreferenceKeys.PREF_MAP_NOTMINE_TILE.equals(tileContents)) {
-                            s += NOT_MINE_TILE_TRAILER;
-                        }
-
-                        //DEBUG: MainActivity.info("map URL: " + s);
-
-                        try {
-                            final byte[] data = downloadData(new URL(s), userAgent, authToken);
-                            if (data.length > 0) {
-                                return new Tile(providerTileRes, providerTileRes, data);
-                            } else {
-                                return null;
-                            }
-                        } catch (MalformedURLException e) {
-                            throw new AssertionError(e);
-                        }
-                    }
-
-                    /*
-                     * depends on supported levels on the server
-                     */
-                    private boolean checkTileExists(int x, int y, int zoom) {
-                        int minZoom = 0;
-                        int maxZoom = 24;
-
-                        if ((zoom < minZoom || zoom > maxZoom)) {
-                            return false;
-                        }
-                        return true;
-                    }
-
-                    private byte[] downloadData(final URL url, final String userAgent, final String authToken) {
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        InputStream is = null;
-                        try {
-                            HttpURLConnection conn = (HttpURLConnection)url.openConnection();
-                            if (null != authToken) {
-                                conn.setRequestProperty("Authorization", authToken);
-                            }
-                            conn.setRequestProperty("User-Agent", userAgent);
-                            is = conn.getInputStream();
-                            byte[] byteChunk = new byte[4096];
-                            int n;
-
-                            while ((n = is.read(byteChunk)) > 0) {
-                                baos.write(byteChunk, 0, n);
-                            }
-                        } catch (IOException e) {
-                            Logging.error("Failed while reading bytes from " +
-                                    url.toExternalForm() + ": "+ e.getMessage());
-                        } finally {
-                            if (is != null) {
-                                try {
-                                    is.close();
-                                } catch (IOException ioex) {
-                                    Logging.error("Failed while closing InputStream " +
-                                            url.toExternalForm() + ": "+ ioex.getMessage());
-                                }
-                            }
-                        }
-                        return baos.toByteArray();
-                    }
-                };
-
-                tileOverlay = googleMap.addTileOverlay(new TileOverlayOptions()
-                        .tileProvider(tileProvider).transparency(0.35f));
-            }
+            // Tile overlays implemented previously with Google Maps TileProvider/TileOverlay.
+            // MapLibre handles raster tile sources differently (RasterSource/TileSet + RasterLayer)
+            // For now, skip adding a Google-style TileOverlay when running under MapLibre.
+            // TODO: migrate server tile logic to a MapLibre RasterSource if authentication and headers can be expressed.
 
             //ALIBI: still checking prefs because we pass them to the dbHelper
             if (null != prefs  && visualizeRoute) {
 
-                PolylineOptions pOptions = new PolylineOptions()
-                                .clickable(false);
-                final int mapMode = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MAP_TYPE_NORMAL);
+                final int mapMode = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MapTypes.MAP_TYPE_NORMAL);
                 final boolean nightMode = ThemeUtil.shouldUseMapNightMode(getContext(), prefs);
                 try (Cursor routeCursor = ListFragment.lameStatic.dbHelper
                         .getCurrentVisibleRouteIterator(prefs)) {
@@ -469,23 +286,43 @@ public final class MappingFragment extends Fragment {
                         Logging.info("null route cursor; not mapping");
                     } else {
                         long segmentCount = 0;
+                        final java.util.List<Point> points = new java.util.ArrayList<>();
 
                         for (routeCursor.moveToFirst(); !routeCursor.isAfterLast(); routeCursor.moveToNext()) {
                             final double lat = routeCursor.getDouble(0);
                             final double lon = routeCursor.getDouble(1);
                             //final long time = routeCursor.getLong(2);
-                            pOptions.add(
-                                    new LatLng(lat, lon));
-
-                            pOptions.color(getRouteColorForMapType(mapMode, nightMode));
-                            pOptions.width(ROUTE_WIDTH); //DEFAULT: 10.0
-                            pOptions.zIndex(10000); //to overlay on traffic data
+                            points.add(Point.fromLngLat(lon, lat));
                             segmentCount++;
                         }
                         Logging.info("Loaded route with " + segmentCount + " segments");
-                        routePolyline = googleMap.addPolyline(pOptions);
 
-                        routePolyline.setTag(ROUTE_LINE_TAG);
+                        final String srcId = "route_source";
+                        final String layerId = "route_layer";
+                        // store collected points for live updates
+                        synchronized (this) {
+                            this.routePoints = points;
+                        }
+                        mapView.getMapAsync(mlMap -> {
+                            if (mlMap.getStyle() != null) {
+                                final Feature feature = Feature.fromGeometry(LineString.fromLngLats(points));
+                                final FeatureCollection fc = FeatureCollection.fromFeatures(new Feature[]{feature});
+                                final GeoJsonSource existing = mlMap.getStyle().getSourceAs(srcId);
+                                if (existing != null) {
+                                    existing.setGeoJson(fc);
+                                } else {
+                                    final GeoJsonSource src = new GeoJsonSource(srcId, fc);
+                                    mlMap.getStyle().addSource(src);
+                                    final LineLayer layer = new LineLayer(layerId, srcId);
+                                    layer.setProperties(PropertyFactory.lineColor(getRouteColorForMapType(mapMode, nightMode)), PropertyFactory.lineWidth(ROUTE_WIDTH));
+                                    mlMap.getStyle().addLayer(layer);
+                                }
+                                routePolyline = srcId;
+                            } else {
+                                Logging.info("Style not ready; route will be applied when style loads.");
+                                routePolyline = srcId;
+                            }
+                        });
                     }
                 } catch (Exception e) {
                     Logging.error("Unable to add route: ",e);
@@ -585,23 +422,22 @@ public final class MappingFragment extends Fragment {
                 final Location location = ListFragment.lameStatic.location;
                 if ( location != null ) {
                     if ( state.locked ) {
-                        mapView.getMapAsync(googleMap -> {
-                            // Logging.info( "mapping center location: " + location );
+                        mapView.getMapAsync(mapLibreMap -> {
                             final LatLng locLatLng = new LatLng(location.getLatitude(), location.getLongitude());
-                            float currentZoom = googleMap.getCameraPosition().zoom;
+                            float currentZoom = (float) mapLibreMap.getCameraPosition().zoom;
                             Float cameraBearing = null;
                             if (null != prefs && prefs.getBoolean(PreferenceKeys.PREF_MAP_FOLLOW_BEARING, false)) {
                                 cameraBearing = getBearing(a);
                             }
-                            final CameraUpdate centerUpdate = (state.firstMove || cameraBearing == null) ?
-                                    CameraUpdateFactory.newLatLng(locLatLng) :
-                                    CameraUpdateFactory.newCameraPosition(
-                                        new CameraPosition.Builder().bearing(cameraBearing).zoom(currentZoom).target(locLatLng).build());
+                            final org.maplibre.android.camera.CameraUpdate centerUpdate = (state.firstMove || cameraBearing == null) ?
+                                    org.maplibre.android.camera.CameraUpdateFactory.newLatLng(locLatLng) :
+                                    org.maplibre.android.camera.CameraUpdateFactory.newCameraPosition(
+                                            new org.maplibre.android.camera.CameraPosition.Builder().bearing(cameraBearing).zoom(currentZoom).target(locLatLng).build());
                             if (state.firstMove) {
-                                googleMap.moveCamera(centerUpdate);
+                                mapLibreMap.moveCamera(centerUpdate);
                                 state.firstMove = false;
                             } else {
-                                googleMap.animateCamera(centerUpdate);
+                                mapLibreMap.animateCamera(centerUpdate);
                             }
                         });
                     }
@@ -626,25 +462,25 @@ public final class MappingFragment extends Fragment {
                                             ((location.getTime() - lastLocation.getTime()) > MIN_ROUTE_LOCATION_DIFF_TIME) &&
                                                     lastLocation.distanceTo(location)> MIN_ROUTE_LOCATION_DIFF_METERS)) {
                                 if (routePolyline != null) {
-                                    final List<LatLng> routePoints = routePolyline.getPoints();
-                                    routePoints.add(new LatLng(location.getLatitude(), location.getLongitude()));
-                                    final int mapMode = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MAP_TYPE_NORMAL);
-                                    final boolean nightMode = ThemeUtil.shouldUseMapNightMode(getContext(), prefs);
-                                    routePolyline.setColor(getRouteColorForMapType(mapMode, nightMode));
-
-                                    if (routePoints.size() > POLYLINE_PERF_THRESHOLD_COARSE) {
-                                        Simplify<LatLng> simplify = new Simplify<>(new LatLng[0], latLngPointExtractor);
-                                        LatLng[] simplified = simplify.simplify(routePoints.toArray(new LatLng[0]), POLYLINE_TOLERANCE_COARSE, false);
-                                        routePolyline.setPoints(Arrays.asList(simplified));
-                                        Logging.error("major route simplification: "+routePoints.size()+"->"+simplified.length);
-                                    } else if (routePoints.size() > POLYLINE_PERF_THRESHOLD_FINE) {
-                                        Simplify<LatLng> simplify = new Simplify<>(new LatLng[0], latLngPointExtractor);
-                                        LatLng[] simplified = simplify.simplify(routePoints.toArray(new LatLng[0]), POLYLINE_TOLERANCE_FINE, true);
-                                        routePolyline.setPoints(Arrays.asList(simplified));
-                                        Logging.error("minor route simplification: "+routePoints.size()+"->"+simplified.length);
+                                    // support two possible route representations:
+                                    // - a String source id when using MapLibre GeoJsonSource
+                                    // - a legacy Google Polyline object (left for compatibility)
+                                    if (routePolyline instanceof String) {
+                                        final String srcId = (String) routePolyline;
+                                        routePoints.add(Point.fromLngLat(location.getLongitude(), location.getLatitude()));
+                                        mapView.getMapAsync(mapLibreMap -> {
+                                            if (mapLibreMap.getStyle() != null) {
+                                                final GeoJsonSource src = mapLibreMap.getStyle().getSourceAs(srcId);
+                                                if (src != null) {
+                                                    final Feature feature = Feature.fromGeometry(LineString.fromLngLats(routePoints));
+                                                    final FeatureCollection fc = FeatureCollection.fromFeatures(new Feature[]{feature});
+                                                    src.setGeoJson(fc);
+                                                }
+                                            }
+                                        });
                                     } else {
-                                        //DEBUG: MainActivity.error("route points: " + routePoints.size());
-                                        routePolyline.setPoints(routePoints);
+                                        // legacy Google Polyline path - skip in MapLibre build
+                                        Logging.info("Legacy polyline update skipped in MapLibre build");
                                     }
                                 } else {
                                     Logging.error("route polyline null - this shouldn't happen");
@@ -735,20 +571,20 @@ public final class MappingFragment extends Fragment {
         Logging.info( "MAP: destroy mapping." );
         finishing.set(true);
 
-        mapView.getMapAsync(googleMap -> {
+        mapView.getMapAsync(mapLibreMap -> {
             // save zoom
             final Activity a = getActivity();
             if (null != a) {
             final SharedPreferences prefs = a.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
             if (null != prefs) {
                 final Editor edit = prefs.edit();
-                edit.putFloat(PreferenceKeys.PREF_PREV_ZOOM, googleMap.getCameraPosition().zoom);
+                edit.putFloat(PreferenceKeys.PREF_PREV_ZOOM, (float) mapLibreMap.getCameraPosition().zoom);
                 edit.apply();
             } else {
                 Logging.warn("failed saving map state - unable to get preferences.");
             }
             // save center
-            state.oldCenter = googleMap.getCameraPosition().target;
+            state.oldCenter = mapLibreMap.getCameraPosition().target;
             }
         });
         try {
@@ -786,13 +622,7 @@ public final class MappingFragment extends Fragment {
         if (mapRender != null) {
             mapRender.onResume();
         }
-        if (null != tileOverlay) {
-            //DEBUG: MainActivity.info("clearing tile overlay cache");
-            if (null != mapView) {
-                //refresh tiles on resume
-                mapView.postInvalidate();
-            }
-        }
+        // MapLibre handles raster layers differently; no Google TileOverlay to refresh here.
 
         setupTimer();
         final Activity a = getActivity();
@@ -895,20 +725,20 @@ public final class MappingFragment extends Fragment {
             final SharedPreferences prefs = a.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
             switch (item.getItemId()) {
                 case MENU_ZOOM_IN: {
-                    mapView.getMapAsync(googleMap -> {
-                        float zoom = googleMap.getCameraPosition().zoom;
+                    mapView.getMapAsync(mapLibreMap -> {
+                        float zoom = (float) mapLibreMap.getCameraPosition().zoom;
                         zoom++;
-                        final CameraUpdate zoomUpdate = CameraUpdateFactory.zoomTo(zoom);
-                        googleMap.animateCamera(zoomUpdate);
+                        final org.maplibre.android.camera.CameraUpdate zoomUpdate = org.maplibre.android.camera.CameraUpdateFactory.zoomTo(zoom);
+                        mapLibreMap.animateCamera(zoomUpdate);
                     });
                     return true;
                 }
                 case MENU_ZOOM_OUT: {
-                    mapView.getMapAsync(googleMap -> {
-                        float zoom = googleMap.getCameraPosition().zoom;
+                    mapView.getMapAsync(mapLibreMap -> {
+                        float zoom = (float) mapLibreMap.getCameraPosition().zoom;
                         zoom--;
-                        final CameraUpdate zoomUpdate = CameraUpdateFactory.zoomTo(zoom);
-                        googleMap.animateCamera(zoomUpdate);
+                        final org.maplibre.android.camera.CameraUpdate zoomUpdate = org.maplibre.android.camera.CameraUpdateFactory.zoomTo(zoom);
+                        mapLibreMap.animateCamera(zoomUpdate);
                     });
                     return true;
                 }
@@ -967,7 +797,7 @@ public final class MappingFragment extends Fragment {
 
                     String name = showTraffic ? getString(R.string.menu_traffic_off) : getString(R.string.menu_traffic_on);
                     item.setTitle(name);
-                    mapView.getMapAsync(googleMap -> googleMap.setTrafficEnabled(showTraffic));
+                    mapView.getMapAsync(mapLibreMap -> { /* traffic layer not supported by MapLibre in same way; no-op */ });
                     return true;
                 }
                 case MENU_FILTER: {
@@ -976,24 +806,24 @@ public final class MappingFragment extends Fragment {
                     return true;
                 }
                 case MENU_MAP_TYPE: {
-                    mapView.getMapAsync(googleMap -> {
-                        int newMapType = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MAP_TYPE_NORMAL);
+                    mapView.getMapAsync(mapLibreMap -> {
+                        int newMapType = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MapTypes.MAP_TYPE_NORMAL);
                         final Activity a1 = getActivity();
                         switch (newMapType) {
-                            case MAP_TYPE_NORMAL:
-                                newMapType = MAP_TYPE_SATELLITE;
+                            case MapTypes.MAP_TYPE_NORMAL:
+                                newMapType = MapTypes.MAP_TYPE_SATELLITE;
                                 WiGLEToast.showOverActivity(a1, R.string.tab_map, getString(R.string.map_toast_satellite), Toast.LENGTH_SHORT);
                                 break;
-                            case MAP_TYPE_SATELLITE:
-                                newMapType = MAP_TYPE_HYBRID;
+                            case MapTypes.MAP_TYPE_SATELLITE:
+                                newMapType = MapTypes.MAP_TYPE_HYBRID;
                                 WiGLEToast.showOverActivity(a1, R.string.tab_map, getString(R.string.map_toast_hybrid), Toast.LENGTH_SHORT);
                                 break;
-                            case MAP_TYPE_HYBRID:
-                                newMapType = MAP_TYPE_TERRAIN;
+                            case MapTypes.MAP_TYPE_HYBRID:
+                                newMapType = MapTypes.MAP_TYPE_TERRAIN;
                                 WiGLEToast.showOverActivity(a1, R.string.tab_map, getString(R.string.map_toast_terrain), Toast.LENGTH_SHORT);
                                 break;
-                            case MAP_TYPE_TERRAIN:
-                                newMapType = MAP_TYPE_NORMAL;
+                            case MapTypes.MAP_TYPE_TERRAIN:
+                                newMapType = MapTypes.MAP_TYPE_NORMAL;
                                 WiGLEToast.showOverActivity(a1, R.string.tab_map, getString(R.string.map_toast_normal), Toast.LENGTH_SHORT);
                                 break;
                             default:
@@ -1002,7 +832,7 @@ public final class MappingFragment extends Fragment {
                         Editor edit = prefs.edit();
                         edit.putInt(PreferenceKeys.PREF_MAP_TYPE, newMapType);
                         edit.apply();
-                        googleMap.setMapType(newMapType);
+                        // MapLibre doesn't support GoogleMap 'mapType' enums; map style changes should be handled via style URLs.
                     });
                     return true;
                 }
@@ -1168,20 +998,20 @@ public final class MappingFragment extends Fragment {
     private static final PointExtractor<LatLng> latLngPointExtractor = new PointExtractor<LatLng>() {
         @Override
         public double getX(LatLng point) {
-            return point.latitude * 1000000;
+                return point.getLatitude() * 1000000;
         }
 
         @Override
         public double getY(LatLng point) {
-            return point.longitude * 1000000;
+                return point.getLongitude() * 1000000;
         }
     };
 
     public static int getRouteColorForMapType(final int mapType, final boolean nightMode) {
         if (nightMode) {
                 return OVERLAY_LIGHT;
-        } else if (mapType != MAP_TYPE_NORMAL && mapType != MAP_TYPE_TERRAIN
-                && mapType != MAP_TYPE_NONE) {
+        } else if (mapType != MapTypes.MAP_TYPE_NORMAL && mapType != MapTypes.MAP_TYPE_TERRAIN
+            && mapType != MapTypes.MAP_TYPE_NONE) {
             return OVERLAY_LIGHT;
         }
         return OVERLAY_DARK;

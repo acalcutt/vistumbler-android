@@ -44,7 +44,6 @@ import android.provider.Settings;
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 
-import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.material.navigation.NavigationView;
 
 import androidx.core.content.ContextCompat;
@@ -76,7 +75,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 
-import com.google.android.gms.common.ConnectionResult;
+// Removed dependency on Google Play Services availability checks
 import com.google.gson.Gson;
 
 import net.wigle.wigleandroid.background.BssidMatchingAudioThread;
@@ -1087,16 +1086,8 @@ public final class MainActivity extends AppCompatActivity implements TextToSpeec
             state.wakeLock.acquire();
         }
 
-        final int serviceAvailable = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(getApplicationContext());
-        Logging.info("GoogleApiAvailability: " + serviceAvailable);
-        if (serviceAvailable != ConnectionResult.SUCCESS && !playServiceShown) {
-            Logging.error("GoogleApiAvailability not available! " + serviceAvailable);
-            final Dialog dialog = GoogleApiAvailability.getInstance().getErrorDialog(this, serviceAvailable, 0);
-            if (null != dialog) {
-                dialog.show();
-                playServiceShown = true;
-            }
-        }
+        // Skipping Google Play Services availability check: app uses native providers and MapLibre.
+        Logging.info("Skipping Google Play Services availability check (not required).");
     }
 
     @Override

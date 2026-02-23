@@ -9,24 +9,29 @@ import android.os.Message;
 
 import androidx.annotation.NonNull;
 
-import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.model.BitmapDescriptor;
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
-import com.google.android.gms.maps.model.LatLngBounds;
-import com.google.android.gms.maps.model.Marker;
-import com.google.android.gms.maps.model.MarkerOptions;
-import com.google.maps.android.clustering.Cluster;
-import com.google.maps.android.clustering.ClusterManager;
-import com.google.maps.android.clustering.view.DefaultClusterRenderer;
-import com.google.maps.android.collections.MarkerManager;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.style.sources.GeoJsonSource;
+import org.maplibre.android.style.sources.GeoJsonOptions;
+import org.maplibre.geojson.Feature;
+import org.maplibre.geojson.FeatureCollection;
+import org.maplibre.geojson.Point;
+import org.maplibre.android.style.layers.CircleLayer;
+import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.layers.SymbolLayer;
+import org.maplibre.android.style.layers.PropertyFactory;
+import org.maplibre.android.style.layers.Layer;
+import org.maplibre.android.style.layers.SymbolLayer;
+import org.maplibre.android.style.expressions.Expression;
 
 import net.wigle.wigleandroid.model.Network;
-import net.wigle.wigleandroid.ui.NetworkIconGenerator;
+import net.wigle.wigleandroid.model.NetworkType;
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,27 +45,31 @@ import java.util.regex.Matcher;
  */
 public class MapRender {
 
-    private final ClusterManager<Network> mClusterManager;
-    private final NetworkRenderer networkRenderer;
-    private final boolean isDbResult;
-    private final AtomicInteger networkCount = new AtomicInteger();
-    private final SharedPreferences prefs;
-    private final GoogleMap map;
-    private Matcher ssidMatcher;
-    private final Set<Network> labeledNetworks = Collections.newSetFromMap(
+        private final boolean isDbResult;
+        private final AtomicInteger networkCount = new AtomicInteger();
+        private final SharedPreferences prefs;
+        private final MapLibreMap map;
+        private Matcher ssidMatcher;
+        private final Set<Network> labeledNetworks = Collections.newSetFromMap(
             new ConcurrentHashMap<>());
+        // Separate clustered sources per WiFi crypto so clusters don't mix security types
+        private GeoJsonSource liveOpenSource;
+        private GeoJsonSource liveWepSource;
+        private GeoJsonSource liveWpaSource;
+        private GeoJsonSource liveBtSource;
+        private GeoJsonSource liveCellSource;
+        // prefix for source/layer ids; DB-result renderers should use their own prefixed sources
+        private final String sourcePrefix;
+        private final List<Feature> liveOpenFeatures = Collections.synchronizedList(new ArrayList<>());
+        private final List<Feature> liveWepFeatures = Collections.synchronizedList(new ArrayList<>());
+        private final List<Feature> liveBtFeatures = Collections.synchronizedList(new ArrayList<>());
+        private final List<Feature> liveCellFeatures = Collections.synchronizedList(new ArrayList<>());
+        private final List<Feature> liveWpaFeatures = Collections.synchronizedList(new ArrayList<>());
 
     private static final String MESSAGE_BSSID = "messageBssid";
     private static final String MESSAGE_BSSID_LIST = "messageBssidList";
     //ALIBI: placeholder while we sort out "bubble" icons for BT, BLE, Cell, Cell NR, WiFi encryption types.
-    private static final BitmapDescriptor DEFAULT_ICON = BitmapDescriptorFactory.defaultMarker(NetworkHues.DEFAULT);
-    private static final BitmapDescriptor DEFAULT_ICON_NEW = BitmapDescriptorFactory.defaultMarker(NetworkHues.NEW);
-    private static final BitmapDescriptor CELL_ICON = BitmapDescriptorFactory.defaultMarker(NetworkHues.CELL);
-    private static final BitmapDescriptor CELL_ICON_NEW = BitmapDescriptorFactory.defaultMarker(NetworkHues.CELL_NEW);
-    private static final BitmapDescriptor BT_ICON = BitmapDescriptorFactory.defaultMarker(NetworkHues.BT);
-    private static final BitmapDescriptor BT_ICON_NEW = BitmapDescriptorFactory.defaultMarker(NetworkHues.BT_NEW);
-    private static final BitmapDescriptor WIFI_ICON = BitmapDescriptorFactory.defaultMarker(NetworkHues.WIFI);
-    private static final BitmapDescriptor WIFI_ICON_NEW = BitmapDescriptorFactory.defaultMarker(NetworkHues.WIFI_NEW);
+    // Icons removed; using CircleLayer colors instead
 
     private static final float DEFAULT_ICON_ALPHA = 0.7f;
     private static final float CUSTOM_ICON_ALPHA = 0.75f;
@@ -69,185 +78,102 @@ public class MapRender {
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    private class NetworkRenderer extends DefaultClusterRenderer<Network> {
-        final NetworkIconGenerator iconFactory;
-
-        public NetworkRenderer(Context context, GoogleMap map, ClusterManager<Network> clusterManager) {
-            super(context, map, clusterManager);
-            iconFactory = new NetworkIconGenerator(context);
-        }
-
-        @Override
-        protected void onBeforeClusterItemRendered(@NonNull Network network, MarkerOptions markerOptions) {
-            // Draw a single network.
-            final BitmapDescriptor icon = getIcon(network);
-            markerOptions.icon(icon);
-            if (icon == DEFAULT_ICON || icon == DEFAULT_ICON_NEW) {
-                markerOptions.alpha(DEFAULT_ICON_ALPHA);
-            }
-            else {
-                markerOptions.alpha(CUSTOM_ICON_ALPHA);
-            }
-
-            markerOptions.title(network.getSsid());
-            final String newString = network.isNew() ? " (new)" : "";
-            markerOptions.snippet(network.getBssid() + newString + "\n\t" + network.getChannel() + "\n\t" + network.getCapabilities());
-        }
-
-        private BitmapDescriptor getIcon(final Network network) {
-            if (showDefaultIcon(network)) {
-                MapRender.this.labeledNetworks.remove(network);
-                return getPinDescriptor(network);
-            }
-
-            MapRender.this.labeledNetworks.add(network);
-            return BitmapDescriptorFactory.fromBitmap(iconFactory.makeIcon(network, network.isNew()));
-        }
-
-        private BitmapDescriptor getPinDescriptor(final Network network) {
-            switch (network.getType()) {
-                case CDMA:
-                case GSM:
-                case WCDMA:
-                case LTE:
-                case NR:
-                    if (network.isNew()) {
-                        return CELL_ICON_NEW;
-                    }
-                    return CELL_ICON;
-                case BT:
-                case BLE:
-                    if (network.isNew()) {
-                        return BT_ICON_NEW;
-                    }
-                    return BT_ICON;
-                case WIFI:
-                    if (network.isNew()) {
-                        return WIFI_ICON_NEW;
-                    }
-                    return WIFI_ICON;
-                default:
-                    if (network.isNew()) {
-                        return WIFI_ICON_NEW;
-                    }
-                    return DEFAULT_ICON;
-            }
-        }
-        private boolean showDefaultIcon(final Network network) {
-            final boolean showLabel = prefs.getBoolean( PreferenceKeys.PREF_MAP_LABEL, true );
-            if (showLabel) {
-                final LatLngBounds bounds = map.getProjection().getVisibleRegion().latLngBounds;
-                if (bounds == null || network.getLatLng() == null) return false;
-                // if on screen, and room in labeled networks, we can show the label
-                return !bounds.contains(network.getLatLng()) || MapRender.this.labeledNetworks.size() > MAX_LABELS;
-            }
-            return true;
-        }
-
-        @Override
-        protected void onBeforeClusterRendered(@NonNull Cluster<Network> cluster, @NonNull MarkerOptions markerOptions) {
-            // Draw a cluster
-            super.onBeforeClusterRendered(cluster, markerOptions);
-            markerOptions.title(cluster.getSize() + " Networks");
-            StringBuilder builder = new StringBuilder();
-            int count = 0;
-            for (final Network network : cluster.getItems()) {
-                final String ssid = network.getSsid();
-                if (!ssid.equals("")) {
-                    if (count > 0) {
-                        builder.append(", ");
-                    }
-                    count++;
-                    builder.append(ssid);
-                }
-                if (count > 20) {
-                    break;
-                }
-            }
-            markerOptions.snippet(builder.toString());
-        }
-
-        @Override
-        protected boolean shouldRenderAsCluster(@NonNull Cluster<Network> cluster) {
-            return (prefs.getBoolean( PreferenceKeys.PREF_MAP_CLUSTER, true ) && cluster.getSize() > 4)
-                    || cluster.getSize() >= 100;
-        }
-
-        protected void updateItem(final Network network) {
-            final Marker marker = this.getMarker(network);
-            if (marker != null) {
-                if (showDefaultIcon(network)) {
-                    if (marker.getAlpha() != DEFAULT_ICON_ALPHA) {
-                        marker.setIcon(getIcon(network));
-                        marker.setAlpha(DEFAULT_ICON_ALPHA);
-                    }
-                }
-                else {
-                    if (marker.getAlpha() == DEFAULT_ICON_ALPHA) {
-                        marker.setIcon(getIcon(network));
-                        marker.setAlpha(CUSTOM_ICON_ALPHA);
-                    }
-                }
-            }
-            else if (network.isNew()) {
-                // handle case where network was not added before because it is not new
-                final boolean showNewDBOnly = prefs.getBoolean( PreferenceKeys.PREF_MAP_ONLY_NEWDB, false );
-                if (showNewDBOnly) {
-                    mClusterManager.addItem(network);
-                    mClusterManager.cluster();
-                }
-            }
-        }
-
-        private void setupRelabelingTask() {
-            // setup camera change listener to fire the asynctask
-            Handler handler = new Handler(Looper.getMainLooper());
-            final LatLngBounds bounds = map.getProjection().getVisibleRegion().latLngBounds;
-            map.setOnCameraIdleListener(() -> executor.execute(() -> {
-                final Collection<Network> nets = MainActivity.getNetworkCache().values();
-                final ArrayList<String> ssids = new ArrayList<>(nets.size());
-                for (final Network network : nets) {
-                    final Marker marker = NetworkRenderer.this.getMarker(network);
-                    if (marker != null && network.getLatLng() != null) {
-                        final boolean inBounds = bounds.contains(network.getLatLng());
-                        if (inBounds || MapRender.this.labeledNetworks.contains(network)) {
-                            // MainActivity.info("sendupdate: " + network.getBssid());
-                            ssids.add(network.getBssid());
-                        }
-                    }
-                }
-                if (!ssids.isEmpty()) {
-                    sendUpdateNetwork(ssids);
-                }
-                handler.post(mClusterManager::cluster);
-            }));
-        }
-    }
-
-    public MapRender(final Context context, final GoogleMap map, final boolean isDbResult) {
+    public MapRender(final Context context, final MapLibreMap map, final boolean isDbResult) {
         this.map = map;
         this.isDbResult = isDbResult;
         prefs = context.getSharedPreferences( PreferenceKeys.SHARED_PREFS, 0 );
         ssidMatcher = FilterMatcher.getSsidFilterMatcher( prefs, MappingFragment.MAP_DIALOG_PREFIX );
-        mClusterManager = new ClusterManager<>(context, map);
-        networkRenderer = new NetworkRenderer(context, map, mClusterManager);
-        mClusterManager.setRenderer(networkRenderer);
-        map.setOnCameraIdleListener(mClusterManager);
+        // initialize prefix early so final field is always set
+        this.sourcePrefix = isDbResult ? "db_" : "live_";
 
-        MarkerManager.Collection markerCollection = mClusterManager.getMarkerCollection();
-        markerCollection.setOnInfoWindowClickListener(marker -> {
-            return;
-        });
-        markerCollection.setOnMarkerClickListener(marker -> false);
+        try {
+            try {
+                Logging.info("MapRender: instance=" + System.identityHashCode(this) + " created for map instance=" + System.identityHashCode(map) + " isDbResult=" + isDbResult);
+            } catch (Throwable t) {}
+            try {
+                // log caller stack to help identify who created this MapRender
+                final StackTraceElement[] st = Thread.currentThread().getStackTrace();
+                StringBuilder sb = new StringBuilder();
+                // skip first few stack frames that are JVM/internal
+                for (int i = 3; i < Math.min(10, st.length); i++) {
+                    sb.append(st[i].toString()).append(" |");
+                }
+                Logging.info("MapRender: ctor stack: " + sb.toString());
+            } catch (Throwable t) {}
+                    // create GeoJson sources (open, wep, wpa+, bt, cell) so clustering doesn't mix types
+                // For DB result views, disable clustering so individual points render immediately.
+                final GeoJsonOptions clusteredOptions = new GeoJsonOptions().withCluster(true).withClusterRadius(50);
+                final GeoJsonOptions noClusterOptions = new GeoJsonOptions();
+                final GeoJsonOptions opts = isDbResult ? noClusterOptions : clusteredOptions;
+                liveOpenSource = new GeoJsonSource(sourcePrefix + "open", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveWepSource = new GeoJsonSource(sourcePrefix + "wep", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveWpaSource = new GeoJsonSource(sourcePrefix + "wpa", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveBtSource = new GeoJsonSource(sourcePrefix + "bt", FeatureCollection.fromFeatures(new Feature[]{}), opts);
+                liveCellSource = new GeoJsonSource(sourcePrefix + "cell", FeatureCollection.fromFeatures(new Feature[]{}), opts);
 
-        mClusterManager.setOnClusterItemClickListener(item -> false);
-        mClusterManager.setOnClusterItemInfoWindowClickListener(item -> {
-            return;
-        });
+            // If style is already loaded, create sources/layers now. Otherwise register listener to add them when style loads.
+            if (map.getStyle() != null) {
+                Logging.info("MapRender: style present at init, adding sources/layers");
+                ensureSourcesAndLayers();
+            } else {
+                // Try to register style-loaded listener via reflection to support multiple SDK versions.
+                boolean listenerRegistered = false;
+                try {
+                    java.lang.Class<?> mapClass = map.getClass();
+                    java.lang.reflect.Method addListener = null;
+                    for (java.lang.reflect.Method mm : mapClass.getMethods()) {
+                        if ("addOnStyleLoadedListener".equals(mm.getName()) && mm.getParameterCount() == 1) {
+                            addListener = mm;
+                            break;
+                        }
+                    }
+                    if (addListener != null) {
+                        final java.lang.reflect.Method listenerMethod = addListener;
+                        final java.lang.Class<?> listenerType = listenerMethod.getParameterTypes()[0];
+                        Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                                listenerType.getClassLoader(),
+                                new java.lang.Class[]{listenerType},
+                                (proxyObj, method, args) -> {
+                                    try {
+                                        Logging.info("MapRender: style loaded (reflection), adding sources/layers");
+                                        ensureSourcesAndLayers();
+                                    } catch (Exception ex) {
+                                        Logging.error("MapRender: failed in reflected style listener: " + ex, ex);
+                                    }
+                                    return null;
+                                }
+                        );
+                        listenerMethod.invoke(map, proxy);
+                        Logging.info("MapRender: registered reflected style listener");
+                        listenerRegistered = true;
+                    }
+                } catch (Throwable t) {
+                    Logging.error("MapRender: reflection style listener registration failed: " + t, t);
+                }
 
-        if (!isDbResult) {
-            // setup the relabeling background task
-            networkRenderer.setupRelabelingTask();
+                if (!listenerRegistered) {
+                    Logging.info("MapRender: style listener not available, will poll until style loads");
+                    final Handler styleHandler = new Handler(Looper.getMainLooper());
+                    final Runnable checker = new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (map.getStyle() != null) {
+                                    Logging.info("MapRender: style loaded (poll), adding sources/layers");
+                                    ensureSourcesAndLayers();
+                                } else {
+                                    styleHandler.postDelayed(this, 250);
+                                }
+                            } catch (Exception ex) {
+                                Logging.error("MapRender: style check failed: " + ex, ex);
+                            }
+                        }
+                    };
+                    styleHandler.post(checker);
+                }
+            }
+        } catch (Exception ex) {
+            Logging.error("MapRender: failed to init live sources: " + ex, ex);
         }
 
         reCluster();
@@ -263,13 +189,12 @@ public class MapRender {
             cached++;
             if (okForMapTab(network)) {
                 added++;
-                mClusterManager.addItem(network);
+                // add via our GeoJSON source lists
+                addItem(network);
             }
         }
         Logging.info("MapRender cached: " + cached + " added: " + added);
-        networkCount.getAndAdd(added);
-
-        mClusterManager.cluster();
+        // addItem already increments networkCount
     }
 
     public boolean okForMapTab( final Network network ) {
@@ -294,25 +219,170 @@ public class MapRender {
                 reCluster();
             }
             else {
-                mClusterManager.addItem(network);
-                mClusterManager.cluster();
+                // add feature to appropriate source (open / wep / wpa)
+                try {
+                    Feature f = Feature.fromGeometry(Point.fromLngLat(network.getLatLng().getLongitude(), network.getLatLng().getLatitude()));
+                    f.addStringProperty("bssid", network.getBssid());
+                    f.addStringProperty("ssid", network.getSsid());
+                    f.addNumberProperty("type", (double) network.getType().ordinal());
+                    f.addNumberProperty("crypto", (double) network.getCrypto());
+                    final int crypto = network.getCrypto();
+                    Logging.info("MapRender: adding feature bssid=" + network.getBssid() + " crypto=" + crypto);
+                    // handle BT / BLE and cellular first
+                    if (NetworkType.isBtType(network.getType())) {
+                        liveBtFeatures.add(f);
+                    } else if (NetworkType.isCellType(network.getType())) {
+                        liveCellFeatures.add(f);
+                    } else {
+                        if (crypto == Network.CRYPTO_NONE) {
+                            liveOpenFeatures.add(f);
+                        } else if (crypto == Network.CRYPTO_WEP) {
+                            liveWepFeatures.add(f);
+                        } else {
+                            // WPA / WPA2 / WPA3 / other secure
+                            liveWpaFeatures.add(f);
+                        }
+                    }
+                    updateSource();
+                } catch (Exception ignored) {}
             }
         }
     }
 
     public void clear() {
+        // Don't clear DB-result features: these are intended to persist for the DB results view
+        if (isDbResult) {
+            Logging.info("MapRender: clear skipped for db results");
+            return;
+        }
         Logging.info("MapRender: clear");
         labeledNetworks.clear();
         networkCount.set(0);
-        mClusterManager.clearItems();
+        liveOpenFeatures.clear();
+        liveWepFeatures.clear();
+        liveBtFeatures.clear();
+        liveCellFeatures.clear();
+        liveWpaFeatures.clear();
+        updateSource();
         // mClusterManager.setRenderer(networkRenderer);
     }
 
     public void reCluster() {
+        // For DB results, avoid reclustering which would clear stored DB features
+        if (isDbResult) {
+            Logging.info("MapRender: reCluster skipped for db results");
+            return;
+        }
         Logging.info("MapRender: reCluster");
         clear();
         if (!isDbResult) {
             addLatestNetworks();
+        }
+    }
+
+    private void updateSource() {
+        try {
+            if (liveOpenSource != null) {
+                synchronized (liveOpenFeatures) {
+                    Logging.info("MapRender: instance=" + System.identityHashCode(this) + " updating " + sourcePrefix + "open source, features=" + liveOpenFeatures.size() + " mapInstance=" + System.identityHashCode(map));
+                    liveOpenSource.setGeoJson(FeatureCollection.fromFeatures(liveOpenFeatures));
+                }
+            } else {
+                Logging.info("MapRender: " + sourcePrefix + "open source is null when updating");
+            }
+            if (liveWepSource != null) {
+                synchronized (liveWepFeatures) {
+                    Logging.info("MapRender: instance=" + System.identityHashCode(this) + " updating " + sourcePrefix + "wep source, features=" + liveWepFeatures.size() + " mapInstance=" + System.identityHashCode(map));
+                    liveWepSource.setGeoJson(FeatureCollection.fromFeatures(liveWepFeatures));
+                }
+            }
+            if (liveWpaSource != null) {
+                synchronized (liveWpaFeatures) {
+                    Logging.info("MapRender: instance=" + System.identityHashCode(this) + " updating " + sourcePrefix + "wpa source, features=" + liveWpaFeatures.size() + " mapInstance=" + System.identityHashCode(map));
+                    liveWpaSource.setGeoJson(FeatureCollection.fromFeatures(liveWpaFeatures));
+                }
+            }
+            if (liveBtSource != null) {
+                synchronized (liveBtFeatures) {
+                    Logging.info("MapRender: instance=" + System.identityHashCode(this) + " updating " + sourcePrefix + "bt source, features=" + liveBtFeatures.size() + " mapInstance=" + System.identityHashCode(map));
+                    liveBtSource.setGeoJson(FeatureCollection.fromFeatures(liveBtFeatures));
+                }
+            }
+            if (liveCellSource != null) {
+                synchronized (liveCellFeatures) {
+                    Logging.info("MapRender: instance=" + System.identityHashCode(this) + " updating " + sourcePrefix + "cell source, features=" + liveCellFeatures.size() + " mapInstance=" + System.identityHashCode(map));
+                    liveCellSource.setGeoJson(FeatureCollection.fromFeatures(liveCellFeatures));
+                }
+            }
+        } catch (Exception ex) {
+            Logging.error("MapRender: failed updating source: " + ex, ex);
+        }
+    }
+
+    // create layers and add sources to the style; safe to call multiple times
+    private void ensureSourcesAndLayers() {
+        if (map.getStyle() == null) return;
+        // avoid re-adding sources/layers if already present
+            try {
+                if (map.getStyle().getSourceAs(sourcePrefix + "open") != null) {
+                    Logging.info("MapRender: sources/layers already present, skipping");
+                    return;
+                }
+            } catch (Exception ignored) {}
+        try {
+            map.getStyle().addSource(liveOpenSource);
+            map.getStyle().addSource(liveWepSource);
+            map.getStyle().addSource(liveWpaSource);
+            map.getStyle().addSource(liveBtSource);
+            map.getStyle().addSource(liveCellSource);
+
+            // unclustered circles (single points) for each type
+                CircleLayer openUnclustered = new CircleLayer(sourcePrefix + "open_unclustered", sourcePrefix + "open")
+                    .withProperties(PropertyFactory.circleRadius(6f), PropertyFactory.circleColor("#4CAF50")); // green
+            openUnclustered.setFilter(Expression.neq(Expression.get("cluster"), true));
+            map.getStyle().addLayer(openUnclustered);
+
+                CircleLayer wepUnclustered = new CircleLayer(sourcePrefix + "wep_unclustered", sourcePrefix + "wep")
+                    .withProperties(PropertyFactory.circleRadius(6f), PropertyFactory.circleColor("#FF9800")); // orange
+            wepUnclustered.setFilter(Expression.neq(Expression.get("cluster"), true));
+            map.getStyle().addLayer(wepUnclustered);
+
+                CircleLayer wpaUnclustered = new CircleLayer(sourcePrefix + "wpa_unclustered", sourcePrefix + "wpa")
+                    .withProperties(PropertyFactory.circleRadius(6f), PropertyFactory.circleColor("#F44336")); // red
+            wpaUnclustered.setFilter(Expression.neq(Expression.get("cluster"), true));
+            map.getStyle().addLayer(wpaUnclustered);
+
+                CircleLayer btUnclustered = new CircleLayer(sourcePrefix + "bt_unclustered", sourcePrefix + "bt")
+                    .withProperties(PropertyFactory.circleRadius(6f), PropertyFactory.circleColor("#2196F3")); // blue
+            btUnclustered.setFilter(Expression.neq(Expression.get("cluster"), true));
+            map.getStyle().addLayer(btUnclustered);
+
+                CircleLayer cellUnclustered = new CircleLayer(sourcePrefix + "cell_unclustered", sourcePrefix + "cell")
+                    .withProperties(PropertyFactory.circleRadius(6f), PropertyFactory.circleColor("#9C27B0")); // purple
+            cellUnclustered.setFilter(Expression.neq(Expression.get("cluster"), true));
+            map.getStyle().addLayer(cellUnclustered);
+
+            // labels and cluster layers follow same logic as before; for brevity reuse updateSource to populate
+            Logging.info("MapRender: added sources and base layers");
+            try {
+                int layerCount = map.getStyle().getLayers().size();
+                Logging.info("MapRender: style has " + layerCount + " layers after add");
+                for (String id : new String[]{sourcePrefix + "open_unclustered",sourcePrefix + "wep_unclustered",sourcePrefix + "wpa_unclustered",sourcePrefix + "bt_unclustered",sourcePrefix + "cell_unclustered"}) {
+                    boolean present = map.getStyle().getLayer(id) != null;
+                    Logging.info("MapRender: layer present check " + id + " = " + present);
+                }
+            } catch (Exception ex) {
+                Logging.error("MapRender: error inspecting layers: " + ex, ex);
+            }
+            // After creating sources/layers, ensure any queued features are applied to the sources
+            try {
+                updateSource();
+                Logging.info("MapRender: updateSource() called after adding sources/layers");
+            } catch (Exception ex) {
+                Logging.error("MapRender: error updating sources after layer add: " + ex, ex);
+            }
+        } catch (Exception ex) {
+            Logging.error("MapRender: error adding sources/layers: " + ex, ex);
         }
     }
 
@@ -348,10 +418,11 @@ public class MapRender {
         public void handleMessage(final Message message) {
             final String bssid = message.getData().getString(MESSAGE_BSSID);
             if (bssid != null) {
-                // MainActivity.info("handleMessage: " + bssid);
                 final Network network = MainActivity.getNetworkCache().get(bssid);
                 if (network != null) {
-                    networkRenderer.updateItem(network);
+                    // remove old feature and re-add updated feature
+                    removeFeatureByBssid(bssid);
+                    addItem(network);
                 }
             }
 
@@ -361,12 +432,52 @@ public class MapRender {
                 for (final String thisBssid : bssids) {
                     final Network network = MainActivity.getNetworkCache().get(thisBssid);
                     if (network != null) {
-                        networkRenderer.updateItem(network);
+                        removeFeatureByBssid(thisBssid);
+                        addItem(network);
                     }
                 }
             }
         }
     };
+
+    private void removeFeatureByBssid(final String bssid) {
+        try {
+            synchronized (liveOpenFeatures) {
+                liveOpenFeatures.removeIf(f -> bssid.equals(f.getStringProperty("bssid")));
+            }
+            synchronized (liveWepFeatures) {
+                liveWepFeatures.removeIf(f -> bssid.equals(f.getStringProperty("bssid")));
+            }
+            synchronized (liveWpaFeatures) {
+                liveWpaFeatures.removeIf(f -> bssid.equals(f.getStringProperty("bssid")));
+            }
+            synchronized (liveBtFeatures) {
+                liveBtFeatures.removeIf(f -> bssid.equals(f.getStringProperty("bssid")));
+            }
+            synchronized (liveCellFeatures) {
+                liveCellFeatures.removeIf(f -> bssid.equals(f.getStringProperty("bssid")));
+            }
+            updateSource();
+        } catch (Exception ex) {
+            Logging.error("MapRender: failed removing feature by bssid: " + ex, ex);
+        }
+    }
+
+    /**
+     * Set route geojson (FeatureCollection) to display as a line on the map.
+     */
+    public void setRouteGeoJson(final FeatureCollection fc) {
+        try {
+            if (map != null && map.getStyle() != null) {
+                final GeoJsonSource rs = (GeoJsonSource) map.getStyle().getSourceAs("route_source");
+                if (rs != null) {
+                    rs.setGeoJson(fc == null ? FeatureCollection.fromFeatures(new Feature[]{}) : fc);
+                }
+            }
+        } catch (Exception ex) {
+            Logging.error("MapRender: failed setting route geojson: " + ex, ex);
+        }
+    }
 
     private static final class NetworkHues {
         public static final float WIFI = 92.90f;     // #87A96B

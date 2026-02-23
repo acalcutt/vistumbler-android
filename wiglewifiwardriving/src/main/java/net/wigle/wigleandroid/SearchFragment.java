@@ -35,12 +35,13 @@ import android.widget.RelativeLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
-import com.google.android.gms.maps.CameraUpdateFactory;
-import com.google.android.gms.maps.MapView;
-import com.google.android.gms.maps.MapsInitializer;
-import com.google.android.gms.maps.model.CameraPosition;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.geometry.LatLngBounds;
 
 import net.wigle.wigleandroid.model.NetworkFilterType;
 import net.wigle.wigleandroid.model.QueryArgs;
@@ -230,7 +231,7 @@ public class SearchFragment extends Fragment {
 
         final Activity a = getActivity();
         final SharedPreferences prefs = (null != a)?a.getApplicationContext().
-                getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0):null;
+            getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0):null;
         RadioButton rb = view.findViewById(R.id.radio_search_local);
         rb.setOnCheckedChangeListener((buttonView, isChecked) -> {
             //ALIBI: this is unpleasantly complex, but we can't do "ALL" searches against the server
@@ -239,21 +240,36 @@ public class SearchFragment extends Fragment {
                 networkTypeSpinner.setSelection(1);
             }
         });
+        // determine WifiDB availability (visible only when basic WifiDB prefs provided)
+        final RadioButton rbWigle = view.findViewById(R.id.radio_search_wigle);
+        boolean haveWdb = false;
+        if (prefs != null) {
+            final String wuser = prefs.getString(PreferenceKeys.PREF_WIFIDB_USERNAME, "");
+            final String wapikey = prefs.getString(PreferenceKeys.PREF_WIFIDB_APIKEY, "");
+            final String wurl = prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, "");
+            haveWdb = (wuser != null && !wuser.isEmpty()) && (wapikey != null && !wapikey.isEmpty()) && (wurl != null && !wurl.isEmpty());
+        }
+        if (rbWigle != null) {
+            rbWigle.setEnabled(haveWdb);
+            rbWigle.setVisibility(haveWdb ? VISIBLE : GONE);
+        }
+
         if ((null == prefs || prefs.getString(PreferenceKeys.PREF_AUTHNAME, "").isEmpty()) || !TokenAccess.hasApiToken(prefs)) {
             rb.setChecked(true);
             mLocalSearch = true;
-
-            rb = view.findViewById(R.id.radio_search_wigle);
-            if (null != rb) {
-                rb.setText(String.format("%s %s",getText(R.string.search_wigle), getText(R.string.must_login)));
-                rb.setEnabled(false);
-            } else {
-                Logging.info("unable to get RadioButton");
-            }
         } else {
             if ((ListFragment.lameStatic.queryArgs != null) && (ListFragment.lameStatic.queryArgs.searchWiGLE())) {
                 rb = view.findViewById(R.id.radio_search_wigle);
-                rb.setChecked(true);
+                if (rb != null) {
+                    rb.setChecked(true);
+                }
+                mLocalSearch = false;
+            } else if ((ListFragment.lameStatic.queryArgs != null) && (ListFragment.lameStatic.queryArgs.searchWifiDB())) {
+                // treat the radio_search_wigle as the WifiDB option now
+                rb = view.findViewById(R.id.radio_search_wigle);
+                if (rb != null) {
+                    rb.setChecked(true);
+                }
                 mLocalSearch = false;
             } else {
                 rb = view.findViewById(R.id.radio_search_local);
@@ -280,14 +296,18 @@ public class SearchFragment extends Fragment {
         button.setOnClickListener(buttonView -> {
             RadioGroup rbg = view.findViewById(R.id.search_type_group);
             int searchTypeId = rbg.getCheckedRadioButtonId();
-            final boolean local = searchTypeId != R.id.radio_search_wigle;
+            final boolean local = searchTypeId == R.id.radio_search_local;
 
             final String fail = SearchUtil.setupQuery(view, getActivity(), local);
 
             if (fail != null) {
                 WiGLEToast.showOverFragment(getActivity(), R.string.error_general, fail);
             } else {
-                ListFragment.lameStatic.queryArgs.setSearchWiGLE(!local);
+                // set which server/search is intended
+                if (ListFragment.lameStatic.queryArgs == null) ListFragment.lameStatic.queryArgs = new QueryArgs();
+                // `radio_search_wigle` now acts as the WifiDB search option
+                ListFragment.lameStatic.queryArgs.setSearchWiGLE(false);
+                ListFragment.lameStatic.queryArgs.setSearchWifiDB(searchTypeId == R.id.radio_search_wigle);
                 final Intent settingsIntent = new Intent(getActivity(), DBResultActivity.class);
                 startActivity(settingsIntent);
             }
@@ -306,33 +326,32 @@ public class SearchFragment extends Fragment {
     @SuppressLint("DefaultLocale")
     private void setupMap(final Context context, final View parentView, final LatLng center,
                           final Bundle savedInstanceState, final SharedPreferences prefs ) {
+        try { MapLibre.getInstance(context); } catch (Exception ignored) {}
         mapView = new MapView( context );
         try {
             mapView.onCreate(savedInstanceState);
-            mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(),
+            mapView.getMapAsync((MapLibreMap mapLibreMap) -> ThemeUtil.setMapTheme(mapLibreMap, mapView.getContext(),
                     prefs, R.raw.night_style_json));
-            MapsInitializer.initialize(context);
             if ((center != null)) {
-                mapView.getMapAsync(googleMap -> {
-                    mapRender = new MapRender(context, googleMap, true);
-                    final CameraPosition cameraPosition = new CameraPosition.Builder()
+                mapView.getMapAsync((MapLibreMap mapLibreMap) -> {
+                    mapRender = new MapRender(context, mapLibreMap, true);
+                    final org.maplibre.android.camera.CameraPosition cameraPosition = new org.maplibre.android.camera.CameraPosition.Builder()
                             .target(center).zoom(DEFAULT_ZOOM).build();
-                    googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-                    googleMap.setOnCameraMoveListener(() -> {
+                    mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+                    mapLibreMap.addOnCameraIdleListener(() -> {
                         if (null == ListFragment.lameStatic.queryArgs) {
                             ListFragment.lameStatic.queryArgs = new QueryArgs();
                         }
-                        LatLngBounds curScreen = googleMap.getProjection()
+                        org.maplibre.android.geometry.LatLngBounds curScreen = mapLibreMap.getProjection()
                                 .getVisibleRegion().latLngBounds;
                         TextView v = parentView.findViewById(R.id.search_lats);
                         ListFragment.lameStatic.queryArgs.setLocationBounds(curScreen);
                         if (null != v) {
-                            //ALIBI: https://xkcd.com/2170/
-                            v.setText(String.format("%.4f : %.4f",curScreen.northeast.latitude , curScreen.southwest.latitude));
+                            v.setText(String.format("%.4f : %.4f",curScreen.getNorthEast().getLatitude() , curScreen.getSouthWest().getLatitude()));
                         }
                         v = parentView.findViewById(R.id.search_lons);
                         if (null != v) {
-                            v.setText(String.format("%.4f : %.4f",curScreen.northeast.longitude, curScreen.southwest.longitude));
+                            v.setText(String.format("%.4f : %.4f",curScreen.getNorthEast().getLongitude(), curScreen.getSouthWest().getLongitude()));
                         }
 
                     });

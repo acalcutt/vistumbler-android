@@ -10,8 +10,7 @@ import android.net.wifi.ScanResult;
 
 import androidx.annotation.NonNull;
 
-import com.google.android.gms.maps.model.LatLng;
-import com.google.maps.android.clustering.ClusterItem;
+import org.maplibre.android.geometry.LatLng;
 
 import net.wigle.wigleandroid.MainActivity;
 import net.wigle.wigleandroid.util.Logging;
@@ -20,7 +19,7 @@ import net.wigle.wigleandroid.util.Logging;
  * network data. not thread-safe.
  */
 @SuppressLint("UseSparseArrays")
-public final class Network implements ClusterItem {
+public final class Network {
 
     public static final List<Integer> wiFi24GHzChannelNumbers = Arrays.asList(1, 2, 3, 4, 5,
             6, 7, 8, 9, 10, 11, 12, 13, 14);
@@ -460,7 +459,6 @@ public final class Network implements ClusterItem {
     }
 
     @NonNull
-    @Override
     public LatLng getPosition() {
         return geoPoint;
     }

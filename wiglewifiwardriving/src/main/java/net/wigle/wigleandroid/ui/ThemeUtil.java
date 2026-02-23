@@ -12,8 +12,10 @@ import android.view.WindowManager;
 
 import androidx.appcompat.app.AppCompatDelegate;
 
-import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.model.MapStyleOptions;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.Style;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
@@ -53,12 +55,27 @@ public class ThemeUtil {
         });
     }
 
-    public static void setMapTheme(final GoogleMap googleMap, final Context c, final SharedPreferences prefs, final int mapNightThemeId) {
+    public static void setMapTheme(final MapLibreMap mapLibreMap, final Context c, final SharedPreferences prefs, final int mapNightThemeId) {
+        final String defaultStyleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
         if (shouldUseMapNightMode(c, prefs)) {
-            try {
-                googleMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(c, mapNightThemeId));
+            try (InputStream is = c.getResources().openRawResource(mapNightThemeId)) {
+                byte[] bytes = is.readAllBytes();
+                String json = new String(bytes, StandardCharsets.UTF_8);
+                Style.Builder builder = new Style.Builder().fromJson(json);
+                mapLibreMap.setStyle(builder);
             } catch (Resources.NotFoundException e) {
                 Logging.error("Unable to theme map: ", e);
+            } catch (Exception e) {
+                Logging.error("Unable to apply map style: ", e);
+            }
+        } else {
+            try {
+                // Apply a sensible default vector style so maps render even when
+                // night theming is not enabled. Vector tiles come from WifiDB
+                // style server used elsewhere in the project.
+                mapLibreMap.setStyle(defaultStyleUrl);
+            } catch (Exception e) {
+                Logging.error("Unable to apply default map style: ", e);
             }
         }
     }

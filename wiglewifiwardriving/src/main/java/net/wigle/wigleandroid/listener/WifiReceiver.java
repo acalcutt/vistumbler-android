@@ -44,7 +44,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
-import com.google.android.gms.maps.model.LatLng;
+import org.maplibre.android.geometry.LatLng;
 
 /**
  * Primary receiver logic for WiFi scan results.

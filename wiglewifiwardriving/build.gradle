@@ -70,13 +70,14 @@ dependencies {
     implementation "androidx.appcompat:appcompat:1.7.1"
     //NB: 1.12 -  1.14.0-alpha08 are unstable - see byzantine failures in https://stackoverflow.com/questions/79128940/mysterious-accessibility-related-crash
     implementation "com.google.android.material:material:1.11.0"
-    implementation "com.google.android.gms:play-services-maps:19.2.0"
     implementation 'org.maplibre.gl:android-sdk:13.0.0-pre0'
+    // Removed Play Services Maps; using MapLibre geometry classes instead
     implementation "androidx.camera:camera-camera2:$camerax_version"
     implementation "androidx.camera:camera-lifecycle:$camerax_version"
     implementation "androidx.camera:camera-view:$camerax_version"
-    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
-    implementation 'com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1'
+    // Use standalone ML Kit artifacts (no Google Play Services dependency)
+    implementation 'com.google.mlkit:text-recognition:16.0.0'
+    implementation 'com.google.mlkit:barcode-scanning:17.0.2'
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'org.slf4j:slf4j-android:1.7.19'
     implementation 'com.fasterxml.jackson.core:jackson-core:2.11.1'
@@ -86,10 +87,12 @@ dependencies {
     implementation (name:'MaskedEditText-1.0.5', ext:'aar')
     implementation 'com.goebl:simplify:1.0.0'
     implementation "com.appmattus.certificatetransparency:certificatetransparency-android:2.8.20"
-    implementation 'com.google.maps.android:android-maps-utils:3.1.1'
+    // Google Maps utils removed; MapLibre-based clustering will be used instead
     implementation 'org.apache.commons:commons-csv:1.10.0'
     implementation group: 'org.yaml', name: 'snakeyaml', version: '2.1'
     implementation 'com.caverock:androidsvg-aar:1.4'
+    // MapLibre annotation plugin for polyline/annotation support
+    implementation 'org.maplibre.gl:android-plugin-annotation-v9:3.0.2'
     implementation 'com.github.razir.progressbutton:progressbutton:2.1.0'
     //debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.10'
     testImplementation 'junit:junit:4.13.2'
