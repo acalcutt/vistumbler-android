@@ -150,7 +150,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
             LatLng center = MappingFragment.DEFAULT_POINT;
             LatLngBounds bounds = queryArgs.getLocationBounds();
             if ( bounds != null ) {
-                center = new LatLng(bounds.getCenter().latitude, bounds.getCenter().longitude);
+                center = new LatLng(bounds.getCenter().getLatitude(), bounds.getCenter().getLongitude());
             }
             final SharedPreferences prefs = this.getApplicationContext().
                     getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
@@ -171,10 +171,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
     }
 
     private void setupMap(final LatLng center, final Bundle savedInstanceState, final SharedPreferences prefs) {
+        try { MapLibre.getInstance(this); } catch (Exception ignored) {}
         mapView = new MapView( this );
         mapView.onCreate(savedInstanceState);
         mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(), prefs, R.raw.night_style_json));
-        MapsInitializer.initialize(this);
 
         mapView.getMapAsync(googleMap -> {
             mapRender = new MapRender(DBResultActivity.this, googleMap, true);
@@ -281,10 +281,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
         }
         if (bounds  != null ) {
             sql += " AND lastlat > ? AND lastlat < ? AND lastlon > ? AND lastlon < ?";
-            params.add((bounds.southwest.latitude)+"");
-            params.add((bounds.northeast.latitude)+"");
-            params.add((bounds.southwest.longitude)+"");
-            params.add((bounds.northeast.longitude)+"");
+            params.add((bounds.getSouthWest().getLatitude())+"");
+            params.add((bounds.getNorthEast().getLatitude())+"");
+            params.add((bounds.getSouthWest().getLongitude())+"");
+            params.add((bounds.getNorthEast().getLongitude())+"");
         }
         if ( limit ) {
             sql += " LIMIT ?"; // + LIMIT;
@@ -307,7 +307,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 if ( bounds == null ) {
                     top.put( (float) count[0], bssid );
                 } else {
-                    Location.distanceBetween( lat, lon, bounds.getCenter().latitude, bounds.getCenter().longitude, results );
+                    Location.distanceBetween( lat, lon, bounds.getCenter().getLatitude(), bounds.getCenter().getLongitude(), results );
                     final float meters = results[0];
 
                     if ( top.size() <= LIMIT ) {
@@ -519,10 +519,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
             if (!queryParams.isEmpty()) {
                 queryParams+="&";
             }
-            queryParams+=API_LAT1_PARAM+"="+bounds.southwest.latitude+"&";
-            queryParams+=API_LAT2_PARAM+"="+bounds.northeast.latitude+"&";
-            queryParams+=API_LON1_PARAM+"="+bounds.southwest.longitude+"&";
-            queryParams+=API_LON2_PARAM+"="+bounds.northeast.longitude;
+            queryParams+=API_LAT1_PARAM+"="+bounds.getSouthWest().getLatitude()+"&";
+            queryParams+=API_LAT2_PARAM+"="+bounds.getNorthEast().getLatitude()+"&";
+            queryParams+=API_LON1_PARAM+"="+bounds.getSouthWest().getLongitude()+"&";
+            queryParams+=API_LON2_PARAM+"="+bounds.getNorthEast().getLongitude();
         }
 
         final MainActivity.State s = MainActivity.getStaticState();

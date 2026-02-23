@@ -213,6 +213,7 @@ public final class MappingFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         final Activity a = getActivity();
         if (null != a) {
+            try { MapLibre.getInstance(a); } catch (Exception ignored) {}
             mapView = new MapView(a);
             try {
                 mapView.onCreate(savedInstanceState);
