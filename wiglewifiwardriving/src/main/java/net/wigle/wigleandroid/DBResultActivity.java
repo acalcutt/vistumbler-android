@@ -156,7 +156,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
             final SharedPreferences prefs = this.getApplicationContext().
                     getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
             setupMap( center, savedInstanceState, prefs );
-            if (queryArgs.searchWiGLE()) {
+            if (queryArgs.searchWiGLE() || queryArgs.searchWifiDB()) {
                 setupWiGLEQuery(queryArgs);
             } else {
                 setupQuery(queryArgs);
