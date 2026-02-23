@@ -10,7 +10,7 @@ import android.net.wifi.ScanResult;
 
 import androidx.annotation.NonNull;
 
-import com.google.android.gms.maps.model.LatLng;
+import org.maplibre.android.geometry.LatLng;
 import com.google.maps.android.clustering.ClusterItem;
 
 import net.wigle.wigleandroid.MainActivity;
