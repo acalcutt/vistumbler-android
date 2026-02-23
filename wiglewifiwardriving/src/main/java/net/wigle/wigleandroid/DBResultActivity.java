@@ -226,12 +226,9 @@ public class DBResultActivity extends ProgressThrobberActivity {
 
         if ( ssid != null && ! "".equals(ssid) ) {
             sql += " AND ssid like ?"; // + DatabaseUtils.sqlEscapeString(ssid);
-            // For local DB searches, allow partial matches unless user provided wildcards
-            String ssidParam = ssid;
-            if (!ssidParam.contains("%") && !ssidParam.contains("_")) {
-                ssidParam = "%" + ssidParam + "%";
-            }
-            params.add(ssidParam);
+            // Use exact match when user provides exact SSID; respect user-supplied
+            // wildcards if present. Do not wrap the SSID automatically.
+            params.add(ssid);
             limit = true;
         }
         if ( bssid != null && ! "".equals(bssid) ) {
@@ -301,6 +298,11 @@ public class DBResultActivity extends ProgressThrobberActivity {
         final float[] results = new float[1];
         final long[] count = new long[1];
         final Handler handler = new Handler(Looper.getMainLooper());
+        // Log SQL and params to aid debugging when no results are returned
+        try {
+            Logging.info("DBResultActivity: SQL=" + sql + " params=" + params.toString());
+        } catch (Exception ignored) {}
+
         final PooledQueryExecutor.Request request = new PooledQueryExecutor.Request( sql, params.toArray(new String[0]),
                 new PooledQueryExecutor.ResultHandler() {
             @Override
