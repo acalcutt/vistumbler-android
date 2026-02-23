@@ -207,19 +207,31 @@ public class DashboardFragment extends Fragment {
                     String satString = null;
                     String conKeyString = null;
                     String conValString = null;
+                    int satCount = 0;
                     if (MainActivity.getMainActivity() != null && MainActivity.getMainActivity().getGPSListener() != null) {
-                        final GNSSListener listener = MainActivity.getMainActivity().getGPSListener();
-                        satString = "("+listener.getSatCount()+")";
-                        conKeyString = MainActivity.join("\n", listener.getConstellations().keySet());
-                        conValString = MainActivity.join("\n", listener.getConstellations().values());
+                      final GNSSListener listener = MainActivity.getMainActivity().getGPSListener();
+                      satCount = listener.getSatCount();
+                      if (satCount > 0) {
+                        satString = "(" + satCount + ")";
+                      }
+                      conKeyString = MainActivity.join("\n", listener.getConstellations().keySet());
+                      conValString = MainActivity.join("\n", listener.getConstellations().values());
                     }
                     int colorSat = ResourcesCompat.getColor(getResources(), R.color.gps_sat, null);
                     if (satString == null) {
-                        fixMeta.setVisibility(View.INVISIBLE);
-                    } else {
+                      // If we don't have satellite count, fall back to showing location accuracy (meters) when available.
+                      if (location != null && location.hasAccuracy()) {
+                        final int accMeters = Math.round(location.getAccuracy());
                         fixMeta.setTextColor(colorSat);
                         fixMeta.setVisibility(View.VISIBLE);
-                        fixMeta.setText(satString);
+                        fixMeta.setText("±" + accMeters + "m");
+                      } else {
+                        fixMeta.setVisibility(View.INVISIBLE);
+                      }
+                    } else {
+                      fixMeta.setTextColor(colorSat);
+                      fixMeta.setVisibility(View.VISIBLE);
+                      fixMeta.setText(satString);
                     }
                     tv.setTextColor(colorSat);
                     iv.setImageResource(R.drawable.ic_gps);

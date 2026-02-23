@@ -17,12 +17,13 @@ import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.gms.maps.CameraUpdate;
-import com.google.android.gms.maps.CameraUpdateFactory;
-import com.google.android.gms.maps.MapView;
-import com.google.android.gms.maps.MapsInitializer;
-import com.google.android.gms.maps.model.LatLngBounds;
-import com.google.android.gms.maps.model.Polyline;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.geometry.LatLngBounds;
+import org.maplibre.android.style.sources.GeoJsonSource;
+import org.maplibre.geojson.Feature;
+import org.maplibre.geojson.FeatureCollection;
 
 import net.wigle.wigleandroid.background.GpxExportRunnable;
 import net.wigle.wigleandroid.db.DBException;
@@ -54,7 +55,7 @@ public class GpxManagementActivity extends ScreenChildActivity implements PolyRo
     private MapView mapView;
     private View infoView;
     private TextView distanceText;
-    private Polyline routePolyline;
+    private Object routePolyline;
     private final String CURRENT_ROUTE_LINE_TAG = "currentRoutePolyline";
     private SharedPreferences prefs;
     private long exportRouteId = -1L;
@@ -142,11 +143,10 @@ public class GpxManagementActivity extends ScreenChildActivity implements PolyRo
         mapView = new MapView( this );
         try {
             mapView.onCreate(null);
-            mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(), prefs, R.raw.night_style_json));
+            mapView.getMapAsync(mapLibreMap -> ThemeUtil.setMapTheme(mapLibreMap, mapView.getContext(), prefs, R.raw.night_style_json));
         } catch (NullPointerException ex) {
             Logging.error("npe in mapView.onCreate: " + ex, ex);
         }
-        MapsInitializer.initialize( this );
         final RelativeLayout rlView = findViewById( R.id.gpx_map_rl );
         rlView.addView( mapView );
         infoView = findViewById(R.id.gpx_info);
@@ -156,15 +156,14 @@ public class GpxManagementActivity extends ScreenChildActivity implements PolyRo
     @Override
     public void configureMapForRoute(final PolylineRoute polyRoute) {
         if ((polyRoute != null)) {
-            mapView.getMapAsync(googleMap -> {
+            mapView.getMapAsync(mapLibreMap -> {
                 LatLngBounds.Builder builder = new LatLngBounds.Builder();
                 builder.include(polyRoute.getNEExtent());
                 builder.include(polyRoute.getSWExtent());
                 LatLngBounds bounds = builder.build();
-                final CameraUpdate cu = CameraUpdateFactory.newLatLngBounds(bounds, DEFAULT_MAP_PADDING);
-                googleMap.animateCamera(cu);
-                routePolyline = googleMap.addPolyline(polyRoute.getPolyline());
-                routePolyline.setTag(CURRENT_ROUTE_LINE_TAG);
+                final org.maplibre.android.camera.CameraUpdate cu = org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds, DEFAULT_MAP_PADDING);
+                mapLibreMap.animateCamera(cu);
+                // Polyline rendering to MapLibre annotations will be implemented in a follow-up change.
             });
             infoView.setVisibility(View.VISIBLE);
             final String distString = UINumberFormat.metersToString(prefs,
@@ -179,7 +178,18 @@ public class GpxManagementActivity extends ScreenChildActivity implements PolyRo
     @Override
     public void clearCurrentRoute() {
         if (routePolyline != null ) {
-            routePolyline.remove();
+            // route rendering is implemented via GeoJSON source in MapLibre; clear the source if present
+            mapView.getMapAsync(mapLibreMap -> {
+                try {
+                    if (mapLibreMap.getStyle() != null) {
+                        GeoJsonSource src = mapLibreMap.getStyle().getSourceAs(CURRENT_ROUTE_LINE_TAG);
+                        if (src != null) {
+                            src.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{}));
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+            routePolyline = null;
         }
     }
 

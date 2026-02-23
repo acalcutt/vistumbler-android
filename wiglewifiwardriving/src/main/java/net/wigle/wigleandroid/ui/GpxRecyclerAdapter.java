@@ -15,7 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.gms.maps.GoogleMap;
+import net.wigle.wigleandroid.MapTypes;
 
 import net.wigle.wigleandroid.ListFragment;
 import net.wigle.wigleandroid.R;
@@ -157,7 +157,7 @@ public class GpxRecyclerAdapter extends RecyclerView.Adapter<GpxRecyclerAdapter.
             notifyItemChanged(selectedPos);
             //DEBUG: MainActivity.info("get route "+clickedId);
             try (Cursor routeCursor = ListFragment.lameStatic.dbHelper.routeIterator(clickedId)) {
-                final int mapMode = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, GoogleMap.MAP_TYPE_NORMAL);
+                final int mapMode = prefs.getInt(PreferenceKeys.PREF_MAP_TYPE, MapTypes.MAP_TYPE_NORMAL);
                 final boolean nightMode = ThemeUtil.shouldUseMapNightMode(context, prefs);
                 if (null == routeCursor) {
                     Logging.info("null route cursor; not mapping");

@@ -3,8 +3,8 @@ package net.wigle.wigleandroid.model;
 import android.graphics.Color;
 import android.location.Location;
 
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.PolylineOptions;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.annotations.PolylineOptions;
 
 import net.wigle.wigleandroid.MainActivity;
 
@@ -27,8 +27,7 @@ public class PolylineRoute {
 
     public PolylineRoute() {
         distanceMeters = 0;
-        polyline = new PolylineOptions()
-                .clickable(false);
+        polyline = new PolylineOptions();
         //init to sure - opposites
         westExtent = 180f;
         eastExtent = -180f;
@@ -51,7 +50,7 @@ public class PolylineRoute {
         polyline.add(newPoint);
         polyline.color(getRouteColorForMapType(mapMode, nightMode));
         polyline.width(DEFAULT_ROUTE_WIDTH);
-        polyline.zIndex(10000); //to overlay above traffic data
+        // MapLibre handles layer ordering via style/layer order; zIndex isn't available on PolylineOptions
         if (latitude > northExtent) {
             northExtent = latitude;
         }
@@ -113,7 +112,7 @@ public class PolylineRoute {
 
     private float getDistanceMetersBetween(LatLng last, LatLng next) {
         float[] results = new float[1];
-        Location.distanceBetween(last.latitude, last.longitude, next.latitude, next.longitude, results);
+        Location.distanceBetween(last.getLatitude(), last.getLongitude(), next.getLatitude(), next.getLongitude(), results);
         return results[0];
     }
 }

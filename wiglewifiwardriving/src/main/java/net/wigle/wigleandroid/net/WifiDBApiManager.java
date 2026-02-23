@@ -9,6 +9,8 @@ import androidx.annotation.NonNull;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+import android.os.Looper;
+import net.wigle.wigleandroid.model.api.WiFiSearchResponse;
 
 import net.wigle.wigleandroid.background.BackgroundGuiHandler;
 import net.wigle.wigleandroid.background.CountingRequestBody;
@@ -419,5 +421,186 @@ public class WifiDBApiManager {
                 completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
             }
         });
+    }
+
+    /**
+     * Search the WifiDB v1 `api/search.php` endpoint. Query params should be a URL-encoded query-string fragment.
+     */
+    public void searchV1(@NotNull final String urlEncodedQueryParams,
+                        @NotNull final AuthenticatedRequestCompletedListener<WiFiSearchResponse,
+                                JSONObject> completedListener) {
+        final SharedPreferences prefs = context.getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+        final String base = prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, "");
+        if (base == null || base.isEmpty()) {
+            completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+            completedListener.onTaskCompleted();
+            return;
+        }
+
+        String normalizedBase = base;
+        if (normalizedBase.endsWith("/api/")) {
+            normalizedBase = normalizedBase.substring(0, normalizedBase.length() - 5);
+        } else if (normalizedBase.endsWith("/api")) {
+            normalizedBase = normalizedBase.substring(0, normalizedBase.length() - 4);
+        }
+        if (!normalizedBase.endsWith("/")) {
+            normalizedBase = normalizedBase + "/";
+        }
+        // Always request GPS-only results from WifiDB (server will filter).
+        String query = (urlEncodedQueryParams != null) ? urlEncodedQueryParams.trim() : "";
+        if (!query.isEmpty()) {
+            if (!query.contains("gpsonly=")) {
+                query = query + "&gpsonly=1";
+            }
+            query = "?" + query;
+        } else {
+            query = "?gpsonly=1";
+        }
+        final String httpUrl = normalizedBase + "api/search.php" + query;
+
+        Request request = new Request.Builder()
+                .url(httpUrl)
+                .build();
+
+        // WifiDB search endpoint is generally public, use client without auth
+        client.newCall(request).enqueue(new Callback() {
+            final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+            @Override public void onFailure(@NotNull Call call, @NotNull IOException e) {
+                Logging.error("Unsuccessful WifiDB Search request: ", e);
+                completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                mainHandler.post(completedListener::onTaskCompleted);
+            }
+
+            @Override public void onResponse(@NotNull Call call, @NotNull Response response) {
+                try (ResponseBody responseBody = response.body()) {
+                    if (!response.isSuccessful()) {
+                        completedListener.onTaskFailed(response.code(), null);
+                    } else {
+                        if (null != responseBody) {
+                            try {
+                                com.google.gson.JsonParser parser = new com.google.gson.JsonParser();
+                                com.google.gson.JsonElement elem = parser.parse(new java.io.InputStreamReader(responseBody.byteStream()));
+                                WiFiSearchResponse out = new WiFiSearchResponse();
+                                java.util.List<WiFiSearchResponse.WiFiNetwork> list = new java.util.ArrayList<>();
+                                if (elem.isJsonObject() && elem.getAsJsonObject().has("results")) {
+                                    try {
+                                        out = new Gson().fromJson(elem, WiFiSearchResponse.class);
+                                        completedListener.onTaskSucceeded(out);
+                                        mainHandler.post(completedListener::onTaskCompleted);
+                                        return;
+                                    } catch (Exception ex) {
+                                        // fallthrough to manual mapping
+                                    }
+                                }
+
+                                if (elem.isJsonArray()) {
+                                    for (com.google.gson.JsonElement e : elem.getAsJsonArray()) {
+                                        com.google.gson.JsonObject o = e.getAsJsonObject();
+                                        WiFiSearchResponse.WiFiNetwork w = mapJsonToWiFiNetwork(o);
+                                        if (w != null) list.add(w);
+                                    }
+                                } else if (elem.isJsonObject()) {
+                                    com.google.gson.JsonObject root = elem.getAsJsonObject();
+                                    if (root.has("data") && root.get("data").isJsonArray()) {
+                                        for (com.google.gson.JsonElement e : root.get("data").getAsJsonArray()) {
+                                            com.google.gson.JsonObject o = e.getAsJsonObject();
+                                            WiFiSearchResponse.WiFiNetwork w = mapJsonToWiFiNetwork(o);
+                                            if (w != null) list.add(w);
+                                        }
+                                    } else {
+                                        WiFiSearchResponse.WiFiNetwork w = mapJsonToWiFiNetwork(root);
+                                        if (w != null) list.add(w);
+                                    }
+                                }
+                                out.setSuccess(true);
+                                out.setResults(list);
+                                completedListener.onTaskSucceeded(out);
+                            } catch (JsonSyntaxException e) {
+                                completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                            }
+                        } else {
+                            completedListener.onTaskFailed(LOCAL_FAILURE_CODE, null);
+                        }
+                    }
+                }
+                mainHandler.post(completedListener::onTaskCompleted);
+            }
+        });
+    }
+
+    private static WiFiSearchResponse.WiFiNetwork mapJsonToWiFiNetwork(com.google.gson.JsonObject o) {
+        try {
+            WiFiSearchResponse.WiFiNetwork w = new WiFiSearchResponse().new WiFiNetwork();
+            if (o.has("netid") && !o.get("netid").isJsonNull()) w.setNetid(o.get("netid").getAsString());
+            else if (o.has("id") && !o.get("id").isJsonNull()) w.setNetid(o.get("id").getAsString());
+            else if (o.has("AP_ID") && !o.get("AP_ID").isJsonNull()) w.setNetid(o.get("AP_ID").getAsString());
+
+            if (o.has("ssid") && !o.get("ssid").isJsonNull()) w.setSsid(o.get("ssid").getAsString());
+
+            if (o.has("encryption") && !o.get("encryption").isJsonNull()) w.setEncryption(o.get("encryption").getAsString());
+            else if (o.has("encry") && !o.get("encry").isJsonNull()) w.setEncryption(o.get("encry").getAsString());
+
+            // If API provides Vistumbler-style flags, keep them and also auth where present
+            if (o.has("flags") && !o.get("flags").isJsonNull()) {
+                try { w.setFlags(o.get("flags").getAsString()); } catch (Exception ignored) {}
+            }
+            if (o.has("auth") && !o.get("auth").isJsonNull()) {
+                try { w.setAuth(o.get("auth").getAsString()); } catch (Exception ignored) {}
+            } else if (o.has("security") && !o.get("security").isJsonNull()) {
+                try { w.setAuth(o.get("security").getAsString()); } catch (Exception ignored) {}
+            }
+
+            if (o.has("channel") && !o.get("channel").isJsonNull()) {
+                try { w.setChannel(o.get("channel").getAsInt()); } catch (Exception ex) {
+                    try { w.setChannel(Integer.parseInt(o.get("channel").getAsString())); } catch (Exception ignored) {}
+                }
+            } else if (o.has("chan") && !o.get("chan").isJsonNull()) {
+                try { w.setChannel(o.get("chan").getAsInt()); } catch (Exception ex) {
+                    try { w.setChannel(Integer.parseInt(o.get("chan").getAsString())); } catch (Exception ignored) {}
+                }
+            }
+
+            if (o.has("frequency") && !o.get("frequency").isJsonNull()) try { w.setFrequency(o.get("frequency").getAsInt()); } catch (Exception ignored) {}
+
+            // high_* signal fields (some APIs provide these)
+            if (o.has("high_sig") && !o.get("high_sig").isJsonNull()) {
+                try { w.setHighSig(o.get("high_sig").getAsInt()); } catch (Exception ex) {
+                    try { w.setHighSig(Integer.parseInt(o.get("high_sig").getAsString())); } catch (Exception ignored) {}
+                }
+            }
+            if (o.has("high_rssi") && !o.get("high_rssi").isJsonNull()) {
+                try { w.setHighRssi(o.get("high_rssi").getAsInt()); } catch (Exception ex) {
+                    try { w.setHighRssi(Integer.parseInt(o.get("high_rssi").getAsString())); } catch (Exception ignored) {}
+                }
+            }
+            if (o.has("high_gps_sig") && !o.get("high_gps_sig").isJsonNull()) {
+                try { w.setHighGpsSig(o.get("high_gps_sig").getAsInt()); } catch (Exception ex) {
+                    try { w.setHighGpsSig(Integer.parseInt(o.get("high_gps_sig").getAsString())); } catch (Exception ignored) {}
+                }
+            }
+            if (o.has("high_gps_rssi") && !o.get("high_gps_rssi").isJsonNull()) {
+                try { w.setHighGpsRssi(o.get("high_gps_rssi").getAsInt()); } catch (Exception ex) {
+                    try { w.setHighGpsRssi(Integer.parseInt(o.get("high_gps_rssi").getAsString())); } catch (Exception ignored) {}
+                }
+            }
+            if (o.has("trilat") && o.has("trilong") && !o.get("trilat").isJsonNull() && !o.get("trilong").isJsonNull()) {
+                try { w.setTrilat(o.get("trilat").getAsDouble()); w.setTrilong(o.get("trilong").getAsDouble()); } catch (Exception ignored) {}
+            } else if (o.has("gps_lat") && o.has("gps_lon") && !o.get("gps_lat").isJsonNull() && !o.get("gps_lon").isJsonNull()) {
+                try { w.setTrilat(o.get("gps_lat").getAsDouble()); w.setTrilong(o.get("gps_lon").getAsDouble()); } catch (Exception ignored) {}
+            } else if (o.has("lat") && (o.has("lon") || o.has("long")) && !o.get("lat").isJsonNull()) {
+                try {
+                    w.setTrilat(o.get("lat").getAsDouble());
+                    if (o.has("lon") && !o.get("lon").isJsonNull()) w.setTrilong(o.get("lon").getAsDouble());
+                    else if (o.has("long") && !o.get("long").isJsonNull()) w.setTrilong(o.get("long").getAsDouble());
+                } catch (Exception ignored) {}
+            } else if (o.has("latitude") && o.has("longitude") && !o.get("latitude").isJsonNull() && !o.get("longitude").isJsonNull()) {
+                try { w.setTrilat(o.get("latitude").getAsDouble()); w.setTrilong(o.get("longitude").getAsDouble()); } catch (Exception ignored) {}
+            }
+
+            return w;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 }

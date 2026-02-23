@@ -26,8 +26,11 @@ public class NetworkBubbleDrawable extends Drawable {
 
     @SuppressLint("UseCompatLoadingForDrawables") //ALIBI: lifted from the original
     public NetworkBubbleDrawable(Resources res) {
-        this.mMask = res.getDrawable(com.google.maps.android.R.drawable.amu_bubble_mask);
-        this.mShadow = res.getDrawable(com.google.maps.android.R.drawable.amu_bubble_shadow);
+        // The original map-utils drawables (amu_bubble_*) are not available
+        // in this module after removing maps-utils. Use local shape drawables
+        // as a compatible fallback so padding/getPadding still work.
+        this.mMask = res.getDrawable(R.drawable.custom_toast_shape);
+        this.mShadow = res.getDrawable(R.drawable.notification_border);
     }
     public void setColor(int color) {
         this.mColor = color;

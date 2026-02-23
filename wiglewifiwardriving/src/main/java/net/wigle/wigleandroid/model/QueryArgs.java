@@ -2,8 +2,8 @@ package net.wigle.wigleandroid.model;
 
 import android.location.Address;
 
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.geometry.LatLngBounds;
 
 /**
  *  Search query arguments
@@ -42,7 +42,12 @@ public class QueryArgs {
             final double centerLat = address.getLatitude();
             final double centerLon = address.getLongitude();
             final Double range = searchWiGLE?ONLINE_RANGE:LOCAL_RANGE;
-            locationBounds = new LatLngBounds(new LatLng(centerLat-range, centerLon-range), new LatLng(centerLat+range, centerLon+range));
+            org.maplibre.android.geometry.LatLng sw = new org.maplibre.android.geometry.LatLng(centerLat-range, centerLon-range);
+            org.maplibre.android.geometry.LatLng ne = new org.maplibre.android.geometry.LatLng(centerLat+range, centerLon+range);
+            LatLngBounds.Builder builder = new LatLngBounds.Builder();
+            builder.include(sw);
+            builder.include(ne);
+            locationBounds = builder.build();
         }
         this.address = address;
     }

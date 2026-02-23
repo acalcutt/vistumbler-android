@@ -486,7 +486,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 }
             }
         };
-
         final String sql = "SELECT level,lat,lon FROM "
                 + DatabaseHelper.LOCATION_TABLE + " WHERE bssid = ?" +
                 " ORDER BY _id DESC limit ?" ;
@@ -509,7 +508,6 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 handler.sendEmptyMessage( MSG_OBS_DONE );
             }
         }, ListFragment.lameStatic.dbHelper ));
-        //ListFragment.lameStatic.dbHelper.addToQueue( request );
     }
 
     @SuppressLint("HandlerLeak")
@@ -582,8 +580,7 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                     public void onStyleLoaded(@NonNull Style style) {
                         // Set initial camera position if network has location
                         if (network != null && network.getLatLng() != null) {
-                            com.google.android.gms.maps.model.LatLng gmsLatLng = network.getLatLng();
-                            LatLng latLng = new LatLng(gmsLatLng.latitude, gmsLatLng.longitude);
+                            LatLng latLng = network.getLatLng();
                             final CameraPosition cameraPosition = new CameraPosition.Builder()
                                     .target(latLng).zoom(DEFAULT_ZOOM).build();
                             mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
@@ -650,9 +647,9 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
 
                             // Add the device marker immediately if we have location
                             if (network != null && network.getLatLng() != null) {
-                                com.google.android.gms.maps.model.LatLng gmsLatLng = network.getLatLng();
+                                LatLng networkLatLng = network.getLatLng();
                                 Feature deviceFeature = Feature.fromGeometry(
-                                        Point.fromLngLat(gmsLatLng.longitude, gmsLatLng.latitude));
+                                        Point.fromLngLat(networkLatLng.getLongitude(), networkLatLng.getLatitude()));
                                 deviceSource.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{deviceFeature}));
                             }
 

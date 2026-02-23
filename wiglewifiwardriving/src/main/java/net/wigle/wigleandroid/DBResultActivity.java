@@ -43,12 +43,13 @@ import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
-import com.google.android.gms.maps.CameraUpdateFactory;
-import com.google.android.gms.maps.MapView;
-import com.google.android.gms.maps.MapsInitializer;
-import com.google.android.gms.maps.model.CameraPosition;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.geometry.LatLngBounds;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.MapLibreMap;
 
 import net.wigle.wigleandroid.background.PooledQueryExecutor;
 import net.wigle.wigleandroid.model.ConcurrentLinkedHashMap;
@@ -63,6 +64,7 @@ import net.wigle.wigleandroid.model.api.WiFiSearchResponse;
 import net.wigle.wigleandroid.net.AuthenticatedRequestCompletedListener;
 import net.wigle.wigleandroid.ui.ProgressThrobberActivity;
 import net.wigle.wigleandroid.ui.SetNetworkListAdapter;
+import net.wigle.wigleandroid.net.WifiDBApiManager;
 import net.wigle.wigleandroid.ui.ThemeUtil;
 import net.wigle.wigleandroid.ui.WiGLEAuthDialog;
 import net.wigle.wigleandroid.ui.WiGLEToast;
@@ -150,7 +152,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
             LatLng center = MappingFragment.DEFAULT_POINT;
             LatLngBounds bounds = queryArgs.getLocationBounds();
             if ( bounds != null ) {
-                center = new LatLng(bounds.getCenter().latitude, bounds.getCenter().longitude);
+                center = new LatLng(bounds.getCenter().getLatitude(), bounds.getCenter().getLongitude());
             }
             final SharedPreferences prefs = this.getApplicationContext().
                     getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
@@ -171,22 +173,63 @@ public class DBResultActivity extends ProgressThrobberActivity {
     }
 
     private void setupMap(final LatLng center, final Bundle savedInstanceState, final SharedPreferences prefs) {
+        // Ensure MapLibre is initialized before creating a MapView (some MapLibre
+        // versions require getInstance(...) to be called first).
+        try {
+            try {
+                Class.forName("org.maplibre.android.MapLibre").getMethod("getInstance", android.content.Context.class).invoke(null, this);
+            } catch (NoSuchMethodException | IllegalAccessException | IllegalArgumentException | java.lang.reflect.InvocationTargetException e) {
+                try {
+                    Class<?> mapLibreClass = Class.forName("org.maplibre.android.MapLibre");
+                    Class<?> wkClass = Class.forName("org.maplibre.android.WellKnownTileServer");
+                    Object chosen = null;
+                    Object[] consts = wkClass.getEnumConstants();
+                    if (consts != null) {
+                        for (Object c : consts) {
+                            if (c.toString().equalsIgnoreCase("CUSTOM")) { chosen = c; break; }
+                        }
+                        if (chosen == null && consts.length > 0) chosen = consts[0];
+                    }
+                    java.lang.reflect.Method m = mapLibreClass.getMethod("getInstance", android.content.Context.class, String.class, wkClass);
+                    m.invoke(null, this, null, chosen);
+                } catch (Exception ignored) {
+                    // best-effort only
+                }
+            }
+        } catch (ClassNotFoundException ignored) {
+            // MapLibre not present - ignore
+        }
+
         mapView = new MapView( this );
         mapView.onCreate(savedInstanceState);
-        mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(), prefs, R.raw.night_style_json));
-        MapsInitializer.initialize(this);
+        try {
+            mapView.getMapAsync(mapLibreMap -> {
+                try {
+                    final String styleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
+                    mapLibreMap.setStyle(styleUrl, style -> {
+                        // style loaded for DB result map
+                    });
+                } catch (Exception e) {
+                    ThemeUtil.setMapTheme(mapLibreMap, mapView.getContext(), prefs, R.raw.night_style_json);
+                }
 
-        mapView.getMapAsync(googleMap -> {
-            mapRender = new MapRender(DBResultActivity.this, googleMap, true);
+                Logging.info("DBResultActivity: mapLibreMap instance=" + System.identityHashCode(mapLibreMap) + " mapView=" + System.identityHashCode(mapView));
+                mapRender = new MapRender(DBResultActivity.this, mapLibreMap, true);
 
-            if (center != null) {
-                final CameraPosition cameraPosition = new CameraPosition.Builder()
-                        .target(center).zoom(DEFAULT_ZOOM).build(); //TODO: zoom all the way out instead?
-                googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-            }
-        });
+                if (center != null) {
+                    final org.maplibre.android.camera.CameraPosition cameraPosition = new org.maplibre.android.camera.CameraPosition.Builder()
+                            .target(center).zoom(DEFAULT_ZOOM).build();
+                    mapLibreMap.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newCameraPosition(cameraPosition));
+                }
+            });
+        } catch (Exception ex) {
+            Logging.error("npe in mapView.onCreate: " + ex, ex);
+        }
         final RelativeLayout rlView = findViewById( R.id.db_map_rl );
-        rlView.addView( mapView );
+        if (rlView != null) {
+            Logging.info("DBResultActivity: adding mapView to layout mapViewInstance=" + System.identityHashCode(mapView));
+            rlView.addView( mapView );
+        }
     }
 
     private void setupQuery( final QueryArgs queryArgs ) {
@@ -281,10 +324,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
         }
         if (bounds  != null ) {
             sql += " AND lastlat > ? AND lastlat < ? AND lastlon > ? AND lastlon < ?";
-            params.add((bounds.southwest.latitude)+"");
-            params.add((bounds.northeast.latitude)+"");
-            params.add((bounds.southwest.longitude)+"");
-            params.add((bounds.northeast.longitude)+"");
+            params.add((bounds.getSouthWest().getLatitude())+"");
+            params.add((bounds.getNorthEast().getLatitude())+"");
+            params.add((bounds.getSouthWest().getLongitude())+"");
+            params.add((bounds.getNorthEast().getLongitude())+"");
         }
         if ( limit ) {
             sql += " LIMIT ?"; // + LIMIT;
@@ -307,7 +350,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 if ( bounds == null ) {
                     top.put( (float) count[0], bssid );
                 } else {
-                    Location.distanceBetween( lat, lon, bounds.getCenter().latitude, bounds.getCenter().longitude, results );
+                    Location.distanceBetween( lat, lon, bounds.getCenter().getLatitude(), bounds.getCenter().getLongitude(), results );
                     final float meters = results[0];
 
                     if ( top.size() <= LIMIT ) {
@@ -343,7 +386,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
                             if (null != mapRender) {
                                 for (Network n : resultList) {
                                     listAdapter.add(n);
-                                    mapRender.addItem(n);
+                                    if (mapRender != null) {
+                                        Logging.info("DBResultActivity: calling mapRender.addItem bssid=" + n.getBssid() + " mapRenderInstance=" + System.identityHashCode(mapRender) + " mapView=" + System.identityHashCode(mapView));
+                                        mapRender.addItem(n);
+                                    }
                                     final LatLng ll = n.getPosition();
                                     //noinspection ConstantConditions
                                     if (ll != null) {
@@ -353,7 +399,7 @@ public class DBResultActivity extends ProgressThrobberActivity {
                                 }
                             }
                             if (hasValidPoints) {
-                                mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
+                                mapView.getMapAsync(mapLibreMap -> mapLibreMap.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
                             } else {
                                 handler.post(() -> handleEmptyResult());
                             }
@@ -379,10 +425,13 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 if (null != net) {
                     final Network n = WiFiSearchResponse.asNetwork(net);
                     listAdapter.add(n);
-                    builder.include(n.getPosition());
-
-                    if (n.getLatLng() != null && mapRender != null) {
-                        mapRender.addItem(n);
+                    final LatLng pos = n.getPosition();
+                        if (pos != null) {
+                        builder.include(pos);
+                        if (n.getLatLng() != null && mapRender != null) {
+                            Logging.info("DBResultActivity: calling mapRender.addItem bssid=" + n.getBssid() + " mapRenderInstance=" + System.identityHashCode(mapRender) + " mapView=" + System.identityHashCode(mapView));
+                            mapRender.addItem(n);
+                        }
                     }
                 }
             }
@@ -391,10 +440,13 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 if (null != net) {
                     final Network n = BtSearchResponse.asNetwork(net);
                     listAdapter.add(n);
-                    builder.include(n.getPosition());
-
-                    if (n.getLatLng() != null && mapRender != null) {
-                        mapRender.addItem(n);
+                    final LatLng pos = n.getPosition();
+                        if (pos != null) {
+                        builder.include(pos);
+                        if (n.getLatLng() != null && mapRender != null) {
+                            Logging.info("DBResultActivity: calling mapRender.addItem bssid=" + n.getBssid() + " mapRenderInstance=" + System.identityHashCode(mapRender) + " mapView=" + System.identityHashCode(mapView));
+                            mapRender.addItem(n);
+                        }
                     }
                 }
             }
@@ -403,17 +455,20 @@ public class DBResultActivity extends ProgressThrobberActivity {
                 if (null != net) {
                     final Network n = CellSearchResponse.asNetwork(net);
                     listAdapter.add(n);
-                    builder.include(n.getPosition());
-
-                    if (n.getLatLng() != null && mapRender != null) {
-                        mapRender.addItem(n);
+                    final LatLng pos = n.getPosition();
+                        if (pos != null) {
+                        builder.include(pos);
+                        if (n.getLatLng() != null && mapRender != null) {
+                            Logging.info("DBResultActivity: calling mapRender.addItem bssid=" + n.getBssid() + " mapRenderInstance=" + System.identityHashCode(mapRender) + " mapView=" + System.identityHashCode(mapView));
+                            mapRender.addItem(n);
+                        }
                     }
                 }
             }
         }
         if (!listAdapter.isEmpty()) {
             try {
-                mapView.getMapAsync(googleMap -> googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
+                mapView.getMapAsync(mapLibreMap -> mapLibreMap.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(builder.build(), 0)));
             } catch (IllegalStateException ise) {
                 Logging.error("Illegal state exception on map move: ", ise);
             }
@@ -519,10 +574,10 @@ public class DBResultActivity extends ProgressThrobberActivity {
             if (!queryParams.isEmpty()) {
                 queryParams+="&";
             }
-            queryParams+=API_LAT1_PARAM+"="+bounds.southwest.latitude+"&";
-            queryParams+=API_LAT2_PARAM+"="+bounds.northeast.latitude+"&";
-            queryParams+=API_LON1_PARAM+"="+bounds.southwest.longitude+"&";
-            queryParams+=API_LON2_PARAM+"="+bounds.northeast.longitude;
+            queryParams+=API_LAT1_PARAM+"="+bounds.getSouthWest().getLatitude()+"&";
+            queryParams+=API_LAT2_PARAM+"="+bounds.getNorthEast().getLatitude()+"&";
+            queryParams+=API_LON1_PARAM+"="+bounds.getSouthWest().getLongitude()+"&";
+            queryParams+=API_LON2_PARAM+"="+bounds.getNorthEast().getLongitude();
         }
 
         final MainActivity.State s = MainActivity.getStaticState();
@@ -531,40 +586,81 @@ public class DBResultActivity extends ProgressThrobberActivity {
         if (null != s) {
             queryFailed = false;
             if (null == queryArgs.getType() /*ALIBI: default to WiFi, but shouldn't happen*/ || WIFI.equals(queryArgs.getType())) {
-                s.apiManager.searchWiFi(queryParams, new AuthenticatedRequestCompletedListener<WiFiSearchResponse, JSONObject>() {
-                    @Override
-                    public void onAuthenticationRequired() {
-                        if (null != fa) {
-                            WiGLEAuthDialog.createDialog(fa, getString(R.string.login_title),
-                                    getString(R.string.login_required), getString(R.string.login),
-                                    getString(R.string.cancel));
-                        }
-                    }
-
-                    @Override
-                    public void onTaskCompleted() {
-                        if (null != searchResponse) {
-                            handleResults();
-                        } else {
-                            if (queryFailed) {
-                                handleFailedRequest();
-                            } else {
-                                handleEmptyResult();
+                // Prefer WifiDB v1 search API if a WifiDB URL is configured; fall back to WiGLE search otherwise
+                final SharedPreferences prefs = DBResultActivity.this.getApplicationContext().getSharedPreferences(PreferenceKeys.SHARED_PREFS, 0);
+                final String wdbUrl = prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, "");
+                if (wdbUrl != null && !wdbUrl.isEmpty()) {
+                    WifiDBApiManager wdb = new WifiDBApiManager(DBResultActivity.this);
+                    wdb.searchV1(queryParams, new AuthenticatedRequestCompletedListener<WiFiSearchResponse, JSONObject>() {
+                        @Override
+                        public void onAuthenticationRequired() {
+                            if (null != fa) {
+                                WiGLEAuthDialog.createDialog(fa, getString(R.string.login_title),
+                                        getString(R.string.login_required), getString(R.string.login),
+                                        getString(R.string.cancel));
                             }
                         }
-                    }
 
-                    @Override
-                    public void onTaskSucceeded(WiFiSearchResponse response) {
-                        searchResponse = response;
-                    }
+                        @Override
+                        public void onTaskCompleted() {
+                            if (null != searchResponse) {
+                                handleResults();
+                            } else {
+                                if (queryFailed) {
+                                    handleFailedRequest();
+                                } else {
+                                    handleEmptyResult();
+                                }
+                            }
+                        }
 
-                    @Override
-                    public void onTaskFailed(int status, JSONObject error) {
-                        searchResponse = null;
-                        queryFailed = true;
-                    }
-                });
+                        @Override
+                        public void onTaskSucceeded(WiFiSearchResponse response) {
+                            searchResponse = response;
+                        }
+
+                        @Override
+                        public void onTaskFailed(int status, JSONObject error) {
+                            searchResponse = null;
+                            queryFailed = true;
+                        }
+                    });
+                } else {
+                    s.apiManager.searchWiFi(queryParams, new AuthenticatedRequestCompletedListener<WiFiSearchResponse, JSONObject>() {
+                        @Override
+                        public void onAuthenticationRequired() {
+                            if (null != fa) {
+                                WiGLEAuthDialog.createDialog(fa, getString(R.string.login_title),
+                                        getString(R.string.login_required), getString(R.string.login),
+                                        getString(R.string.cancel));
+                            }
+                        }
+
+                        @Override
+                        public void onTaskCompleted() {
+                            if (null != searchResponse) {
+                                handleResults();
+                            } else {
+                                if (queryFailed) {
+                                    handleFailedRequest();
+                                } else {
+                                    handleEmptyResult();
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void onTaskSucceeded(WiFiSearchResponse response) {
+                            searchResponse = response;
+                        }
+
+                        @Override
+                        public void onTaskFailed(int status, JSONObject error) {
+                            searchResponse = null;
+                            queryFailed = true;
+                        }
+                    });
+                }
             } else if (BT.equals(queryArgs.getType())) {
                 s.apiManager.searchBt(queryParams, new AuthenticatedRequestCompletedListener<BtSearchResponse, JSONObject>() {
                     @Override

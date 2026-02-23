@@ -12,8 +12,8 @@ import android.view.WindowManager;
 
 import androidx.appcompat.app.AppCompatDelegate;
 
-import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.model.MapStyleOptions;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.Style;
 
 import net.wigle.wigleandroid.util.Logging;
 import net.wigle.wigleandroid.util.PreferenceKeys;
@@ -53,12 +53,14 @@ public class ThemeUtil {
         });
     }
 
-    public static void setMapTheme(final GoogleMap googleMap, final Context c, final SharedPreferences prefs, final int mapNightThemeId) {
+    public static void setMapTheme(final MapLibreMap mapLibreMap, final Context c, final SharedPreferences prefs, final int mapNightThemeId) {
         if (shouldUseMapNightMode(c, prefs)) {
-            try {
-                googleMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(c, mapNightThemeId));
-            } catch (Resources.NotFoundException e) {
-                Logging.error("Unable to theme map: ", e);
+            try (final java.io.InputStream is = c.getResources().openRawResource(mapNightThemeId)) {
+                final java.util.Scanner s = new java.util.Scanner(is, java.nio.charset.StandardCharsets.UTF_8.name()).useDelimiter("\\A");
+                final String json = s.hasNext() ? s.next() : "";
+                mapLibreMap.setStyle(new Style.Builder().fromJson(json));
+            } catch (Exception e) {
+                Logging.error("Unable to theme map (MapLibre): ", e);
             }
         }
     }

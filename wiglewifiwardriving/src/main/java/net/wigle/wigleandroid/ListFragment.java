@@ -63,6 +63,7 @@ import net.wigle.wigleandroid.util.PreferenceKeys;
 import net.wigle.wigleandroid.util.StatsUtil;
 
 import org.json.JSONObject;
+import org.maplibre.android.geometry.LatLng;
 
 import java.text.NumberFormat;
 import java.util.Locale;
@@ -731,11 +732,11 @@ public final class ListFragment extends Fragment implements ApiListener, DialogL
         listView.setOnItemLongClickListener((parent, view, position, id) -> {
             final Network network = (Network) parent.getItemAtPosition(position);
             if (network != null && activity != null) {
-                final com.google.android.gms.maps.model.LatLng networkLatLng = network.getLatLng();
+                final LatLng networkLatLng = network.getLatLng();
                 if (networkLatLng != null) {
                     final Intent intent = new Intent(activity, VectorMapActivity.class);
-                    intent.putExtra("lat", networkLatLng.latitude);
-                    intent.putExtra("lon", networkLatLng.longitude);
+                    intent.putExtra("lat", networkLatLng.getLatitude());
+                    intent.putExtra("lon", networkLatLng.getLongitude());
                     activity.startActivity(intent);
                 } else {
                     //TODO: show toast
@@ -771,7 +772,19 @@ public final class ListFragment extends Fragment implements ApiListener, DialogL
 
         try {
             TextView tv = view.findViewById( R.id.sats_text);
-            tv.setText( getString(R.string.list_short_sats, state.GNSSListener.getSatCount()) );
+            int satCount = state.GNSSListener.getSatCount();
+            if (satCount > 0) {
+                tv.setText( getString(R.string.list_short_sats, satCount) );
+            } else {
+                // No satellite count available; fall back to showing location accuracy when present.
+                final Location loc = state.GNSSListener.getCurrentLocation();
+                if (loc != null && loc.hasAccuracy()) {
+                    final int accMeters = Math.round(loc.getAccuracy());
+                    tv.setText("±" + accMeters + "m");
+                } else {
+                    tv.setText( getString(R.string.list_short_sats, 0) );
+                }
+            }
 
             final Location location = state.GNSSListener.getCurrentLocation();
 

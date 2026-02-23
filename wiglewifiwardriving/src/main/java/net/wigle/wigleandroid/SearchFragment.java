@@ -35,12 +35,12 @@ import android.widget.RelativeLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
-import com.google.android.gms.maps.CameraUpdateFactory;
-import com.google.android.gms.maps.MapView;
-import com.google.android.gms.maps.MapsInitializer;
-import com.google.android.gms.maps.model.CameraPosition;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.camera.CameraUpdateFactory;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.geometry.LatLngBounds;
 
 import net.wigle.wigleandroid.model.NetworkFilterType;
 import net.wigle.wigleandroid.model.QueryArgs;
@@ -239,14 +239,28 @@ public class SearchFragment extends Fragment {
                 networkTypeSpinner.setSelection(1);
             }
         });
+
+        // Check if WifiDB credentials are set in preferences
+        final boolean hasWifiDB = (prefs != null)
+                && !prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, "").isEmpty()
+                && !prefs.getString(PreferenceKeys.PREF_WIFIDB_USERNAME, "").isEmpty()
+                && !prefs.getString(PreferenceKeys.PREF_WIFIDB_APIKEY, "").isEmpty();
+
         if ((null == prefs || prefs.getString(PreferenceKeys.PREF_AUTHNAME, "").isEmpty()) || !TokenAccess.hasApiToken(prefs)) {
             rb.setChecked(true);
             mLocalSearch = true;
 
             rb = view.findViewById(R.id.radio_search_wigle);
             if (null != rb) {
-                rb.setText(String.format("%s %s",getText(R.string.search_wigle), getText(R.string.must_login)));
-                rb.setEnabled(false);
+                if (hasWifiDB) {
+                    // If WifiDB is configured, offer remote WifiDB search (label updated to WifiDB)
+                    rb.setText(getText(R.string.search_wigle));
+                    rb.setEnabled(true);
+                } else {
+                    // No Wigle login nor WifiDB configured: show disabled radio with login hint
+                    rb.setText(String.format("%s %s",getText(R.string.search_wigle), getText(R.string.must_login)));
+                    rb.setEnabled(false);
+                }
             } else {
                 Logging.info("unable to get RadioButton");
             }
@@ -306,33 +320,69 @@ public class SearchFragment extends Fragment {
     @SuppressLint("DefaultLocale")
     private void setupMap(final Context context, final View parentView, final LatLng center,
                           final Bundle savedInstanceState, final SharedPreferences prefs ) {
+        // Ensure MapLibre is initialized. Newer MapLibre versions require calling
+        // MapLibre.getInstance(context, apiKey, wellKnownTileServer) before creating a MapView.
+        // Prefer calling the simple 1-arg initializer; if that's not available try the 3-arg via reflection
+        try {
+            try {
+                Class.forName("org.maplibre.android.MapLibre").getMethod("getInstance", android.content.Context.class).invoke(null, context);
+            } catch (NoSuchMethodException | IllegalAccessException | IllegalArgumentException | java.lang.reflect.InvocationTargetException e) {
+                // fallback: attempt to call the 3-arg initializer with a reasonable WellKnownTileServer enum value (prefer CUSTOM)
+                try {
+                    Class<?> mapLibreClass = Class.forName("org.maplibre.android.MapLibre");
+                    Class<?> wkClass = Class.forName("org.maplibre.android.WellKnownTileServer");
+                    Object chosen = null;
+                    Object[] consts = wkClass.getEnumConstants();
+                    if (consts != null) {
+                        for (Object c : consts) {
+                            if (c.toString().equalsIgnoreCase("CUSTOM")) { chosen = c; break; }
+                        }
+                        if (chosen == null && consts.length > 0) chosen = consts[0];
+                    }
+                    java.lang.reflect.Method m = mapLibreClass.getMethod("getInstance", android.content.Context.class, String.class, wkClass);
+                    m.invoke(null, context, null, chosen);
+                } catch (Exception ignored) {
+                    // best-effort only
+                }
+            }
+        } catch (ClassNotFoundException ignored) {
+            // MapLibre not present - ignore
+        }
+
         mapView = new MapView( context );
         try {
             mapView.onCreate(savedInstanceState);
-            mapView.getMapAsync(googleMap -> ThemeUtil.setMapTheme(googleMap, mapView.getContext(),
-                    prefs, R.raw.night_style_json));
-            MapsInitializer.initialize(context);
+            mapView.getMapAsync(mapLibreMap -> {
+                try {
+                    final String styleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
+                    mapLibreMap.setStyle(styleUrl, style -> {
+                        // style loaded for SearchFragment
+                    });
+                } catch (Exception e) {
+                    // fallback to ThemeUtil if style load fails
+                    ThemeUtil.setMapTheme(mapLibreMap, mapView.getContext(), prefs, R.raw.night_style_json);
+                }
+            });
             if ((center != null)) {
-                mapView.getMapAsync(googleMap -> {
-                    mapRender = new MapRender(context, googleMap, true);
+                mapView.getMapAsync(mapLibreMap -> {
+                    mapRender = new MapRender(context, mapLibreMap, true);
                     final CameraPosition cameraPosition = new CameraPosition.Builder()
                             .target(center).zoom(DEFAULT_ZOOM).build();
-                    googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-                    googleMap.setOnCameraMoveListener(() -> {
+                    mapLibreMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+                    mapLibreMap.addOnCameraMoveListener(() -> {
                         if (null == ListFragment.lameStatic.queryArgs) {
                             ListFragment.lameStatic.queryArgs = new QueryArgs();
                         }
-                        LatLngBounds curScreen = googleMap.getProjection()
-                                .getVisibleRegion().latLngBounds;
+                        LatLngBounds curScreen = mapLibreMap.getProjection()
+                            .getVisibleRegion().latLngBounds;
                         TextView v = parentView.findViewById(R.id.search_lats);
                         ListFragment.lameStatic.queryArgs.setLocationBounds(curScreen);
                         if (null != v) {
-                            //ALIBI: https://xkcd.com/2170/
-                            v.setText(String.format("%.4f : %.4f",curScreen.northeast.latitude , curScreen.southwest.latitude));
+                            v.setText(String.format("%.4f : %.4f", curScreen.getNorthEast().getLatitude(), curScreen.getSouthWest().getLatitude()));
                         }
                         v = parentView.findViewById(R.id.search_lons);
                         if (null != v) {
-                            v.setText(String.format("%.4f : %.4f",curScreen.northeast.longitude, curScreen.southwest.longitude));
+                            v.setText(String.format("%.4f : %.4f", curScreen.getNorthEast().getLongitude(), curScreen.getSouthWest().getLongitude()));
                         }
 
                     });
@@ -365,8 +415,8 @@ public class SearchFragment extends Fragment {
                             Address address = addressList.get(0); // ALIBI: taking the first choice. We could also offer the choices in a drop-down.
                             if (null != address) {
                                 LatLng latLng = new LatLng(address.getLatitude(), address.getLongitude());
-                                mapView.getMapAsync(googleMap -> {
-                                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 14));
+                                mapView.getMapAsync(mapLibreMap -> {
+                                    mapLibreMap.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom(latLng, 14));
                                 });
                                 return true;
                             }

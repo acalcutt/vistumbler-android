@@ -31,7 +31,7 @@ import android.os.Looper;
 import android.os.ParcelUuid;
 import android.util.SparseArray;
 
-import com.google.android.gms.maps.model.LatLng;
+import org.maplibre.android.geometry.LatLng;
 
 import net.wigle.wigleandroid.FilterMatcher;
 import net.wigle.wigleandroid.ListFragment;

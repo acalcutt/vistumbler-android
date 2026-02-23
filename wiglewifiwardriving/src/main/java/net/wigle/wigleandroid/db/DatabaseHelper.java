@@ -57,7 +57,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.Process;
 
-import com.google.android.gms.maps.model.LatLng;
+import org.maplibre.android.geometry.LatLng;
 
 /**
  * our database helper, makes a great data meal.

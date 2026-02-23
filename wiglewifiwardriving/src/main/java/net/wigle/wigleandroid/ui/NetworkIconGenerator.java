@@ -14,7 +14,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
-import com.google.maps.android.ui.RotationLayout;
+import android.view.ViewGroup;
 
 import net.wigle.wigleandroid.R;
 import net.wigle.wigleandroid.model.Network;
@@ -33,7 +33,7 @@ public class NetworkIconGenerator {
     private final Context mContext;
     private TextView mTextView;
     private final ViewGroup mContainer;
-    private final RotationLayout mRotationLayout;
+    private final ViewGroup mRotationLayout;
     private final NetworkBubbleDrawable mBackground;
     private int mRotation;
     private View mContentView;
@@ -59,9 +59,9 @@ public class NetworkIconGenerator {
     public NetworkIconGenerator(Context context) {
         mContext = context;
         mBackground = new NetworkBubbleDrawable(this.mContext.getResources());
-        mContainer = (ViewGroup) LayoutInflater.from(mContext).inflate(com.google.maps.android.R.layout.amu_text_bubble, null);
-        mRotationLayout = (RotationLayout) mContainer.getChildAt(0);
-        mContentView = mTextView = (TextView) mRotationLayout.findViewById(com.google.maps.android.R.id.amu_text);
+        mContainer = (ViewGroup) LayoutInflater.from(mContext).inflate(R.layout.amu_text_bubble, null);
+        mRotationLayout = (ViewGroup) mContainer.getChildAt(0);
+        mContentView = mTextView = (TextView) mRotationLayout.findViewById(R.id.amu_text);
         setStyle(STYLE_DEFAULT);
     }
 
@@ -123,12 +123,17 @@ public class NetworkIconGenerator {
         mRotationLayout.removeAllViews();
         mRotationLayout.addView(contentView);
         mContentView = contentView;
-        final View view = mRotationLayout.findViewById(com.google.maps.android.R.id.amu_text);
+        final View view = mRotationLayout.findViewById(R.id.amu_text);
         mTextView = view instanceof TextView ? (TextView) view : null;
     }
 
     public void setContentRotation(int degrees) {
-        mRotationLayout.setViewRotation(degrees);
+        // RotationLayout isn't available; set rotation on the content view as a simple fallback.
+        if (mContentView != null) {
+            mContentView.setRotation(degrees);
+        }
+        // store simplified rotation index used by makeIcon for bitmap rotation handling
+        this.mRotation = ((degrees / 90) % 4 + 4) % 4;
     }
 
     private float rotateAnchor(float u, float v) {
@@ -206,18 +211,19 @@ public class NetworkIconGenerator {
     }
 
     private static int getTextStyle(int style) {
+        // Map-utils styles may not be available in this package; use Android device-default fallbacks.
         switch (style) {
-            case 1:
-            case 2:
+            case STYLE_DEFAULT:
+            case STYLE_WHITE:
             default:
-                return com.google.maps.android.R.style.amu_Bubble_TextAppearance_Dark; //style.amu_Bubble_TextAppearance_Dark;
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7:
-            case 8:
-                return com.google.maps.android.R.style.amu_Bubble_TextAppearance_Light;//style.amu_Bubble_TextAppearance_Light;
+                return android.R.style.TextAppearance_DeviceDefault_Small;
+            case STYLE_CELL:
+            case STYLE_BT:
+            case STYLE_WIFI:
+            case STYLE_CELL_NEW:
+            case STYLE_BT_NEW:
+            case STYLE_WIFI_NEW:
+                return android.R.style.TextAppearance_DeviceDefault_Medium;
         }
     }
 
