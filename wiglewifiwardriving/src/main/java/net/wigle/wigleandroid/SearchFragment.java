@@ -241,7 +241,7 @@ public class SearchFragment extends Fragment {
             }
         });
         // determine WifiDB availability (visible only when basic WifiDB prefs provided)
-        final RadioButton rbWdb = view.findViewById(R.id.radio_search_wifidb);
+        final RadioButton rbWigle = view.findViewById(R.id.radio_search_wigle);
         boolean haveWdb = false;
         if (prefs != null) {
             final String wuser = prefs.getString(PreferenceKeys.PREF_WIFIDB_USERNAME, "");
@@ -249,31 +249,26 @@ public class SearchFragment extends Fragment {
             final String wurl = prefs.getString(PreferenceKeys.PREF_WIFIDB_URL, "");
             haveWdb = (wuser != null && !wuser.isEmpty()) && (wapikey != null && !wapikey.isEmpty()) && (wurl != null && !wurl.isEmpty());
         }
-        if (rbWdb != null) {
-            rbWdb.setEnabled(haveWdb);
-            rbWdb.setVisibility(haveWdb ? VISIBLE : GONE);
+        if (rbWigle != null) {
+            rbWigle.setEnabled(haveWdb);
+            rbWigle.setVisibility(haveWdb ? VISIBLE : GONE);
         }
 
         if ((null == prefs || prefs.getString(PreferenceKeys.PREF_AUTHNAME, "").isEmpty()) || !TokenAccess.hasApiToken(prefs)) {
             rb.setChecked(true);
             mLocalSearch = true;
-
-            rb = view.findViewById(R.id.radio_search_wigle);
-            if (null != rb) {
-                rb.setText(String.format("%s %s",getText(R.string.search_wigle), getText(R.string.must_login)));
-                rb.setEnabled(false);
-            } else {
-                Logging.info("unable to get RadioButton");
-            }
         } else {
             if ((ListFragment.lameStatic.queryArgs != null) && (ListFragment.lameStatic.queryArgs.searchWiGLE())) {
                 rb = view.findViewById(R.id.radio_search_wigle);
-                rb.setChecked(true);
+                if (rb != null) {
+                    rb.setChecked(true);
+                }
                 mLocalSearch = false;
             } else if ((ListFragment.lameStatic.queryArgs != null) && (ListFragment.lameStatic.queryArgs.searchWifiDB())) {
-                final RadioButton rdb = view.findViewById(R.id.radio_search_wifidb);
-                if (rdb != null) {
-                    rdb.setChecked(true);
+                // treat the radio_search_wigle as the WifiDB option now
+                rb = view.findViewById(R.id.radio_search_wigle);
+                if (rb != null) {
+                    rb.setChecked(true);
                 }
                 mLocalSearch = false;
             } else {
@@ -310,8 +305,9 @@ public class SearchFragment extends Fragment {
             } else {
                 // set which server/search is intended
                 if (ListFragment.lameStatic.queryArgs == null) ListFragment.lameStatic.queryArgs = new QueryArgs();
-                ListFragment.lameStatic.queryArgs.setSearchWiGLE(searchTypeId == R.id.radio_search_wigle);
-                ListFragment.lameStatic.queryArgs.setSearchWifiDB(searchTypeId == R.id.radio_search_wifidb);
+                // `radio_search_wigle` now acts as the WifiDB search option
+                ListFragment.lameStatic.queryArgs.setSearchWiGLE(false);
+                ListFragment.lameStatic.queryArgs.setSearchWifiDB(searchTypeId == R.id.radio_search_wigle);
                 final Intent settingsIntent = new Intent(getActivity(), DBResultActivity.class);
                 startActivity(settingsIntent);
             }

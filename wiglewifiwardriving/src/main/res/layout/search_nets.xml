@@ -50,11 +50,6 @@
             <RadioButton android:id="@+id/radio_search_wigle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/search_wigle"
-                />
-            <RadioButton android:id="@+id/radio_search_wifidb"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:text="@string/search_wifidb"
                 />
         </RadioGroup>
