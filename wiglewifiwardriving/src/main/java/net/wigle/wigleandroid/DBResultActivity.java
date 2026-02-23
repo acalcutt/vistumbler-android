@@ -226,7 +226,12 @@ public class DBResultActivity extends ProgressThrobberActivity {
 
         if ( ssid != null && ! "".equals(ssid) ) {
             sql += " AND ssid like ?"; // + DatabaseUtils.sqlEscapeString(ssid);
-            params.add(ssid);
+            // For local DB searches, allow partial matches unless user provided wildcards
+            String ssidParam = ssid;
+            if (!ssidParam.contains("%") && !ssidParam.contains("_")) {
+                ssidParam = "%" + ssidParam + "%";
+            }
+            params.add(ssidParam);
             limit = true;
         }
         if ( bssid != null && ! "".equals(bssid) ) {
