@@ -70,7 +70,7 @@ dependencies {
     implementation "androidx.appcompat:appcompat:1.7.1"
     //NB: 1.12 -  1.14.0-alpha08 are unstable - see byzantine failures in https://stackoverflow.com/questions/79128940/mysterious-accessibility-related-crash
     implementation "com.google.android.material:material:1.11.0"
-    implementation 'org.maplibre.gl:android-sdk:13.0.0-pre0'
+    implementation 'org.maplibre.gl:android-sdk-opengl:13.0.0'
     // Removed Play Services Maps; using MapLibre geometry classes instead
     implementation "androidx.camera:camera-camera2:$camerax_version"
     implementation "androidx.camera:camera-lifecycle:$camerax_version"
@@ -92,7 +92,9 @@ dependencies {
     implementation group: 'org.yaml', name: 'snakeyaml', version: '2.1'
     implementation 'com.caverock:androidsvg-aar:1.4'
     // MapLibre annotation plugin for polyline/annotation support
-    implementation 'org.maplibre.gl:android-plugin-annotation-v9:3.0.2'
+    implementation('org.maplibre.gl:android-plugin-annotation-v9:3.0.2') {
+        exclude group: 'org.maplibre.gl', module: 'android-sdk'
+    }
     implementation 'com.github.razir.progressbutton:progressbutton:2.1.0'
     //debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.10'
     testImplementation 'junit:junit:4.13.2'

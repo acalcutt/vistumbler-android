@@ -576,7 +576,7 @@ public class NetworkActivity extends ScreenChildActivity implements DialogListen
                 mapLibreMap.getUiSettings().setAttributionEnabled(false);
                 mapLibreMap.getUiSettings().setLogoEnabled(false);
 
-                final String styleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
+                final String styleUrl = "https://tiles.wifidb.net/styles/WDB_COLOR_RELIEF/style.json";
                 mapLibreMap.setStyle(styleUrl, new Style.OnStyleLoaded() {
                     @Override
                     public void onStyleLoaded(@NonNull Style style) {

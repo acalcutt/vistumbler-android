@@ -56,7 +56,7 @@ public class ThemeUtil {
     }
 
     public static void setMapTheme(final MapLibreMap mapLibreMap, final Context c, final SharedPreferences prefs, final int mapNightThemeId) {
-        final String defaultStyleUrl = "https://tiles.wifidb.net/styles/WDB_OSM/style.json";
+        final String defaultStyleUrl = "https://tiles.wifidb.net/styles/WDB_COLOR_RELIEF/style.json";
         if (shouldUseMapNightMode(c, prefs)) {
             try (InputStream is = c.getResources().openRawResource(mapNightThemeId)) {
                 byte[] bytes = is.readAllBytes();
