@@ -28,61 +28,136 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
+                <!--
+                  One button per WifiDB history bucket. The tag is the bucket name and is
+                  the only thing that identifies the layer: it names the published archive,
+                  the source added at runtime, and the vector layer inside that archive.
+                -->
                 <Button
-                    android:id="@+id/btn_dailys"
+                    android:id="@+id/btn_daily"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="dailys"
+                    android:tag="daily"
                     android:text="Show Day"
                     android:onClick="toggleLayerClick" />
                 <Button
                     android:id="@+id/btn_weekly"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="WifiDB_weekly"
+                    android:tag="weekly"
                     android:text="Show Week"
                     android:onClick="toggleLayerClick" />
                 <Button
                     android:id="@+id/btn_monthly"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="WifiDB_monthly"
+                    android:tag="monthly"
                     android:text="Show Month"
                     android:onClick="toggleLayerClick" />
                 <Button
                     android:id="@+id/btn_0to1"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="WifiDB_0to1year"
-                    android:text="Show Year"
+                    android:tag="0to1year"
+                    android:text="Show 0-1 year"
                     android:onClick="toggleLayerClick" />
                 <Button
                     android:id="@+id/btn_1to2"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="WifiDB_1to2year"
+                    android:tag="1to2year"
                     android:text="Show 1-2 year"
                     android:onClick="toggleLayerClick" />
                 <Button
                     android:id="@+id/btn_2to3"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="WifiDB_2to3year"
+                    android:tag="2to3year"
                     android:text="Show 2-3 year"
                     android:onClick="toggleLayerClick" />
                 <Button
-                    android:id="@+id/btn_legacy"
+                    android:id="@+id/btn_3to5"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="WifiDB_Legacy"
-                    android:text="Show 3+ year"
+                    android:tag="3to5year"
+                    android:text="Show 3-5 year"
                     android:onClick="toggleLayerClick" />
                 <Button
-                    android:id="@+id/btn_cells"
+                    android:id="@+id/btn_5to10"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:tag="cell_networks"
-                    android:text="Show Cell Networks"
+                    android:tag="5to10year"
+                    android:text="Show 5-10 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_10plus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="10yrplus"
+                    android:text="Show 10+ year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_daily"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_daily"
+                    android:text="Show Cell Day"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_weekly"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_weekly"
+                    android:text="Show Cell Week"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_monthly"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_monthly"
+                    android:text="Show Cell Month"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_0to1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_0to1year"
+                    android:text="Show Cell 0-1 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_1to2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_1to2year"
+                    android:text="Show Cell 1-2 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_2to3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_2to3year"
+                    android:text="Show Cell 2-3 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_3to5"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_3to5year"
+                    android:text="Show Cell 3-5 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_5to10"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_5to10year"
+                    android:text="Show Cell 5-10 year"
+                    android:onClick="toggleLayerClick" />
+                <Button
+                    android:id="@+id/btn_cell_10plus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cell_10yrplus"
+                    android:text="Show Cell 10+ year"
                     android:onClick="toggleLayerClick" />
             </LinearLayout>
         </HorizontalScrollView>
